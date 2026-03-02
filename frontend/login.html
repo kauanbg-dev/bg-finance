@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login - BG Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="auth-body">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="logo.png" alt="BG" class="auth-logo" />
+      <div>
+        <h1 class="auth-title">BG Finance</h1>
+        <p class="auth-subtitle">Entre para acessar seu controle financeiro</p>
+      </div>
+    </div>
+
+    <form id="login-form" class="auth-form">
+      <div class="field">
+        <label>Email</label>
+        <input id="email" type="email" placeholder="seuemail@gmail.com" required />
+      </div>
+
+      <div class="field">
+        <label>Senha</label>
+        <input id="password" type="password" placeholder="••••••••" required />
+      </div>
+
+      <button class="btn primary full" type="submit">Entrar</button>
+
+      <!-- LINKS CLICÁVEIS -->
+    <div class="auth-row">
+    <span style="color: rgba(255,255,255,.75); font-size: 13px;">Não tem conta?</span>
+    <a class="link" href="./register.html">Criar conta</a>
+    </div>
+      <p id="msg" class="msg"></p>
+    </form>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>
