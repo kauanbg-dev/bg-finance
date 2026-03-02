@@ -2,7 +2,7 @@
 
 Sistema de controle financeiro feito com Node.js, Express e SQLite.
 
-🔗 Deploy: https://bg-finance.onrender.com
+🔗 Deploy: https://bg-finance-delta.vercel.app/
 
 ---
 
