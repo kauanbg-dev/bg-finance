@@ -25,7 +25,7 @@ O BG Finance é um sistema simples para controle de receitas e despesas, mostran
 
 ## 📷 Screenshots
 
-![Dashboard](docs/dashboard.png)
+![Dashboard](/docs/dashboard.png)
 
 ![Editar Transação](docs/editar.png)
 
