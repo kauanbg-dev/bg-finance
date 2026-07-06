@@ -1,11 +1,3 @@
-pool.on('connect', () => {
-  console.log('🔥 Conectado no PostgreSQL');
-});
-
-pool.on('error', (err) => {
-  console.error('❌ Erro no pool PostgreSQL:', err);
-});
-
 require('dotenv').config();
 
 const { Pool } = require('pg');
@@ -17,6 +9,14 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+});
+
+pool.on('connect', () => {
+  console.log('Conectado no PostgreSQL');
+});
+
+pool.on('error', (err) => {
+  console.error('Erro no pool PostgreSQL:', err);
 });
 
 async function initDatabase() {
