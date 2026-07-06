@@ -2,7 +2,7 @@
 
 Sistema de controle financeiro feito com Node.js, Express e PostgreSQL no Neon.
 
-🔗 Deploy: https://bg-finance-delta.vercel.app/
+🔗 Deploy: https://bg-finance.onrender.com/
 
 ---
 
