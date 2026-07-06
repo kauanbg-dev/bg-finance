@@ -1,6 +1,6 @@
 # 💰 BG Finance
 
-Sistema de controle financeiro feito com Node.js, Express e SQLite.
+Sistema de controle financeiro feito com Node.js, Express e PostgreSQL no Neon.
 
 🔗 Deploy: https://bg-finance-delta.vercel.app/
 
@@ -16,7 +16,8 @@ O BG Finance é um sistema simples para controle de receitas e despesas, mostran
 
 - Node.js
 - Express
-- SQLite
+- PostgreSQL
+- Neon
 - HTML
 - CSS
 - JavaScript

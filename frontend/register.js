@@ -10,9 +10,19 @@ form.addEventListener('submit', async (e) => {
   e.preventDefault();
   msg.textContent = '';
 
+  const name = document.getElementById('name').value.trim();
   const email = document.getElementById('email').value.trim().toLowerCase();
   const password = document.getElementById('password').value;
   const confirm = document.getElementById('confirm').value;
+
+  // =========================
+  // VALIDAÇÕES
+  // =========================
+
+  if (!name) {
+    setMsg('Digite seu nome.');
+    return;
+  }
 
   if (!email.includes('@') || !email.includes('.')) {
     setMsg('Digite um email válido.');
@@ -29,11 +39,19 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
+  // =========================
+  // REQUEST
+  // =========================
+
   try {
     const res = await fetch('/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({
+        name,
+        email,
+        password
+      })
     });
 
     const data = await res.json();
@@ -43,8 +61,12 @@ form.addEventListener('submit', async (e) => {
       return;
     }
 
-    setMsg('Conta criada! Redirecionando para o login...', true);
-    setTimeout(() => (window.location.href = 'login.html'), 900);
+    setMsg('Conta criada com sucesso! Redirecionando...', true);
+
+    setTimeout(() => {
+      window.location.href = 'login.html';
+    }, 900);
+
   } catch (err) {
     setMsg('Falha de conexão com o servidor.');
   }
