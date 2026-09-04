@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BG Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <img class="brand-logo" src="logo.png" alt="BG logo">
+        <div class="brand-text">
+          <h1>Finance</h1>
+          <p class="subtitle">Controle financeiro com visão de planilha</p>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <div id="user-info" class="user-mini">
+          <div class="avatar" id="user-avatar">B</div>
+          <div class="user-text">
+            <span class="mini-label">Conta</span>
+            <span class="mini-email"></span>
+          </div>
+        </div>
+
+        <button id="logout-btn" class="btn secondary" type="button">Sair</button>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card income">
+        <h3>Receitas</h3>
+        <p id="income">R$ 0.00</p>
+      </div>
+
+      <div class="card expense">
+        <h3>Despesas</h3>
+        <p id="expense">R$ 0.00</p>
+      </div>
+
+      <div class="card total">
+        <h3>Saldo</h3>
+        <p id="total">R$ 0.00</p>
+      </div>
+
+      <div class="card rate">
+        <h3>Taxa de economia</h3>
+        <p id="savings-rate">0%</p>
+      </div>
+    </div>
+
+    <form id="transaction-form" class="form-card form-card-wide">
+      <div class="field">
+        <label>Descrição</label>
+        <input type="text" id="description" placeholder="Ex: Mercado" required>
+      </div>
+
+      <div class="field">
+        <label>Valor (R$)</label>
+        <input type="number" id="amount" placeholder="0,00" step="0.01" required>
+      </div>
+
+      <div class="field">
+        <label>Categoria</label>
+        <select id="category"></select>
+      </div>
+
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="tx-date" />
+      </div>
+
+      <div class="field">
+        <label>Tipo</label>
+        <input type="hidden" id="type" value="income">
+
+        <div class="segmented" role="group" aria-label="Tipo de transação">
+          <button type="button" id="btn-income" class="seg-btn active">+ Receita</button>
+          <button type="button" id="btn-expense" class="seg-btn">- Despesa</button>
+        </div>
+      </div>
+
+      <button class="btn primary" type="submit">Adicionar</button>
+    </form>
+
+    <div class="filter-row">
+      <div class="field">
+        <label>Mês</label>
+        <input type="month" id="month-filter" />
+      </div>
+      <div class="field">
+        <label>Tipo</label>
+        <select id="type-filter">
+          <option value="">Todos</option>
+          <option value="income">Receitas</option>
+          <option value="expense">Despesas</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Categoria</label>
+        <select id="category-filter">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Buscar</label>
+        <input type="search" id="search-filter" placeholder="Descrição…" />
+      </div>
+      <button class="btn secondary" id="clear-filter" type="button">Limpar</button>
+      <button class="btn secondary" id="export-csv" type="button">Exportar CSV</button>
+    </div>
+
+    <div class="sheet-card">
+      <div class="chart-header">
+        <h2>Lançamentos</h2>
+        <span class="muted" id="tx-count">0 registros</span>
+      </div>
+      <div class="table-wrap">
+        <table class="sheet" id="tx-table">
+          <thead>
+            <tr>
+              <th data-sort="date">Data</th>
+              <th data-sort="description">Descrição</th>
+              <th data-sort="category">Categoria</th>
+              <th data-sort="type">Tipo</th>
+              <th data-sort="amount">Valor</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="transaction-list"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2>Fluxo mensal</h2>
+          <p class="muted">Barras de receita/despesa e linha de saldo acumulado</p>
+        </div>
+        <div class="chart-wrapper tall">
+          <canvas id="chartFlow"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2>Por categoria</h2>
+          <p class="muted">Quanto cada grupo pesa no período filtrado</p>
+        </div>
+        <div class="chart-wrapper tall">
+          <canvas id="chartCategory"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2>Composição</h2>
+          <select id="chart-mode">
+            <option value="mix">Receitas x despesas</option>
+            <option value="cats">Fatia por categoria</option>
+          </select>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartMix"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2>Evolução diária</h2>
+          <p class="muted">Entradas, saídas e saldo do dia</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartDaily"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet-card">
+      <div class="chart-header">
+        <h2>Tabela dinâmica</h2>
+        <p class="muted">Categoria × mês, como uma pivot do Excel</p>
+      </div>
+      <div class="table-wrap" id="pivot-wrap"></div>
+    </div>
+  </div>
+
+  <!-- MODAL EDITAR TRANSAÇÃO -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Editar transação</h2>
+        <button id="close-modal" class="icon-btn" type="button">✕</button>
+      </div>
+
+      <form id="edit-form" class="modal-form">
+        <div class="field">
+          <label>Descrição</label>
+          <input type="text" id="edit-description" required />
+        </div>
+
+        <div class="field">
+          <label>Valor (R$)</label>
+          <input type="number" id="edit-amount" step="0.01" required />
+        </div>
+
+        <div class="field">
+          <label>Categoria</label>
+          <select id="edit-category"></select>
+        </div>
+
+        <div class="field">
+          <label>Data</label>
+          <input type="date" id="edit-date" />
+        </div>
+
+        <div class="field">
+          <label>Tipo</label>
+          <div class="segmented" role="group">
+            <button type="button" id="edit-income" class="seg-btn">+ Receita</button>
+            <button type="button" id="edit-expense" class="seg-btn">- Despesa</button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="cancel-edit" class="btn secondary" type="button">Cancelar</button>
+          <button class="btn primary" type="submit">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="script.js"></script>
+<footer class="app-footer">
+  <span>
+    © 2026 BG Finance • 
+    <a href="https://www.instagram.com/eukauan.dev/" target="_blank" class="footer-link">
+      @eukauan.dev
+    </a>
+  </span>
+</footer>
+</body>
+</html>
