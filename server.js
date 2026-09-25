@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -12,7 +14,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'frontend')));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bg-finance-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET nao definida no .env');
+}
 
 function authenticateToken(req, res, next) {
   const header = req.headers.authorization;

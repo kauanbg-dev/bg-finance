@@ -1,25 +1,29 @@
 # BG Finance
 
-Sistema de controle financeiro feito com Node.js, Express e PostgreSQL no Neon.
+Controle de receitas e despesas com login, gráficos e exportação CSV.
 
-Deploy: https://bg-finance.onrender.com/
+**Deploy:** [bg-finance.onrender.com](https://bg-finance.onrender.com/)
 
-O BG Finance controla receitas e despesas, com gráficos detalhados, tabela dinâmica e exportação CSV.
+## Stack
 
-## Tecnologias
+- Node.js + Express
+- PostgreSQL (Neon)
+- HTML, CSS e JavaScript no `frontend/`
 
-- Node.js
-- Express
-- PostgreSQL
-- Neon
-- HTML, CSS e JavaScript
+## O que tem
 
-## Funcionalidades
-
-- Cadastro e login
+- Cadastro e login (JWT)
 - Receitas e despesas com categoria e data
-- Filtros, ordenação e exportação CSV
-- Gráficos de fluxo mensal, categoria, composição e evolução diária
-- Tabela dinâmica (categoria × mês)
+- Filtros, ordenação e CSV
+- Gráficos de fluxo, categoria e evolução
 
-Feito por BG
+## Subir local
+
+```bash
+cp .env.example .env
+# preenche DATABASE_URL e JWT_SECRET
+npm install
+npm start
+```
+
+No Render, coloca as mesmas variáveis no painel do serviço. O `.env` não entra no git.
