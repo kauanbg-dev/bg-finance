@@ -1,23 +1,23 @@
 # BG Finance
 
-Controle de receitas e despesas com login, gráficos e exportação CSV.
+Sistema de controle financeiro com login, categorias, gráficos e exportação CSV.
 
-**Deploy:** [bg-finance.onrender.com](https://bg-finance.onrender.com/)
+**Ao vivo:** [bg-finance.onrender.com](https://bg-finance.onrender.com/)
+
+## Funcionalidades
+
+- Cadastro e login (JWT)
+- Receitas e despesas com categoria e data
+- Filtros, ordenação e exportação CSV
+- Gráficos de fluxo mensal, categoria e evolução
 
 ## Stack
 
 - Node.js + Express
 - PostgreSQL (Neon)
-- HTML, CSS e JavaScript no `frontend/`
+- HTML, CSS e JavaScript (`frontend/`)
 
-## O que tem
-
-- Cadastro e login (JWT)
-- Receitas e despesas com categoria e data
-- Filtros, ordenação e CSV
-- Gráficos de fluxo, categoria e evolução
-
-## Subir local
+## Como rodar
 
 ```bash
 cp .env.example .env
@@ -26,4 +26,4 @@ npm install
 npm start
 ```
 
-No Render, coloca as mesmas variáveis no painel do serviço. O `.env` não entra no git.
+No Render, configure as mesmas variáveis no painel do serviço. O arquivo `.env` não entra no git.
