@@ -51,6 +51,17 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function validTransaction(description, amount, type) {
+  return (
+    description.length > 0 &&
+    description.length <= 120 &&
+    Number.isFinite(amount) &&
+    amount > 0 &&
+    amount < 1e10 &&
+    (type === 'income' || type === 'expense')
+  );
+}
+
 async function resolveCategoryId(userId, type, body) {
   if (body.category_id !== undefined && body.category_id !== null && body.category_id !== '') {
     const id = Number(body.category_id);
@@ -186,7 +197,7 @@ app.post('/categories', authenticateToken, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const type = String(req.body.type || '').trim();
 
-  if (!name || (type !== 'income' && type !== 'expense')) {
+  if (!name || name.length > 40 || (type !== 'income' && type !== 'expense')) {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
@@ -252,7 +263,7 @@ app.post('/transactions', authenticateToken, async (req, res) => {
   const type = String(req.body.type || '').trim();
   const date = parseDate(req.body.date);
 
-  if (!description || Number.isNaN(amount) || (type !== 'income' && type !== 'expense')) {
+  if (!validTransaction(description, amount, type)) {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
@@ -286,7 +297,7 @@ app.put('/transactions/:id', authenticateToken, async (req, res) => {
   const type = String(req.body.type || '').trim();
   const date = parseDate(req.body.date);
 
-  if (!id || !description || Number.isNaN(amount) || (type !== 'income' && type !== 'expense')) {
+  if (!id || !validTransaction(description, amount, type)) {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 

@@ -2,7 +2,8 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0f172a" />
   <title>BG Finance</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -32,48 +33,67 @@
 
     <div class="cards">
       <div class="card income">
-        <h3>Receitas</h3>
-        <p id="income">R$ 0.00</p>
+        <div class="card-top">
+          <h3>Receitas</h3>
+          <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+        </div>
+        <p id="income">R$ 0,00</p>
+        <span class="card-hint" id="income-hint">&nbsp;</span>
       </div>
 
       <div class="card expense">
-        <h3>Despesas</h3>
-        <p id="expense">R$ 0.00</p>
+        <div class="card-top">
+          <h3>Despesas</h3>
+          <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg></span>
+        </div>
+        <p id="expense">R$ 0,00</p>
+        <span class="card-hint" id="expense-hint">&nbsp;</span>
       </div>
 
       <div class="card total">
-        <h3>Saldo</h3>
-        <p id="total">R$ 0.00</p>
+        <div class="card-top">
+          <h3>Saldo</h3>
+          <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 15h2"/></svg></span>
+        </div>
+        <p id="total">R$ 0,00</p>
+        <span class="card-hint" id="total-hint">&nbsp;</span>
       </div>
 
       <div class="card rate">
-        <h3>Taxa de economia</h3>
+        <div class="card-top">
+          <h3>Taxa de economia</h3>
+          <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 18l6-6 4 4 6-8"/><path d="M15 8h5v5"/></svg></span>
+        </div>
         <p id="savings-rate">0%</p>
+        <div class="rate-bar"><span id="rate-bar-fill"></span></div>
       </div>
     </div>
 
     <form id="transaction-form" class="form-card form-card-wide">
-      <div class="field">
+      <div class="field f-desc">
         <label>Descrição</label>
-        <input type="text" id="description" placeholder="Ex: Mercado" required>
+        <input type="text" id="description" placeholder="Ex: Mercado, Uber, Salário…" maxlength="120" autocomplete="off" required>
       </div>
 
-      <div class="field">
+      <div class="field f-amount">
         <label>Valor (R$)</label>
-        <input type="number" id="amount" placeholder="0,00" step="0.01" required>
+        <input type="text" id="amount" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
       </div>
 
-      <div class="field">
-        <label>Categoria</label>
+      <div class="field f-cat">
+        <div class="label-row">
+          <label>Categoria</label>
+          <button type="button" class="link-btn" id="new-category">+ Nova</button>
+        </div>
         <select id="category"></select>
       </div>
 
-      <div class="field">
+      <div class="field f-date">
         <label>Data</label>
         <input type="date" id="tx-date" />
       </div>
 
-      <div class="field">
+      <div class="field f-type">
         <label>Tipo</label>
         <input type="hidden" id="type" value="income">
 
@@ -83,13 +103,21 @@
         </div>
       </div>
 
-      <button class="btn primary" type="submit">Adicionar</button>
+      <button class="btn primary" type="submit" id="submit-btn">Adicionar</button>
     </form>
 
     <div class="filter-row">
-      <div class="field">
+      <div class="field field-month">
         <label>Mês</label>
-        <input type="month" id="month-filter" />
+        <div class="month-nav">
+          <button type="button" class="icon-btn" id="month-prev" aria-label="Mês anterior">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <input type="month" id="month-filter" />
+          <button type="button" class="icon-btn" id="month-next" aria-label="Próximo mês">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
       </div>
       <div class="field">
         <label>Tipo</label>
@@ -105,7 +133,7 @@
           <option value="">Todas</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field field-search">
         <label>Buscar</label>
         <input type="search" id="search-filter" placeholder="Descrição…" />
       </div>
@@ -116,7 +144,18 @@
     <div class="sheet-card">
       <div class="chart-header">
         <h2>Lançamentos</h2>
-        <span class="muted" id="tx-count">0 registros</span>
+        <div class="sheet-tools">
+          <div class="mobile-only sort-wrap">
+            <select id="mobile-sort" aria-label="Ordenar lançamentos">
+              <option value="date:desc">Mais recentes</option>
+              <option value="date:asc">Mais antigos</option>
+              <option value="amount:desc">Maior valor</option>
+              <option value="amount:asc">Menor valor</option>
+              <option value="description:asc">Descrição A–Z</option>
+            </select>
+          </div>
+          <span class="muted" id="tx-count">0 registros</span>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="sheet" id="tx-table">
@@ -133,6 +172,7 @@
           <tbody id="transaction-list"></tbody>
         </table>
       </div>
+      <button type="button" class="btn secondary show-more hidden" id="show-more">Mostrar mais</button>
     </div>
 
     <div class="charts-grid">
@@ -196,7 +236,9 @@
     <div class="modal-card">
       <div class="modal-header">
         <h2>Editar transação</h2>
-        <button id="close-modal" class="icon-btn" type="button">✕</button>
+        <button id="close-modal" class="icon-btn" type="button" aria-label="Fechar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
 
       <form id="edit-form" class="modal-form">
@@ -207,7 +249,7 @@
 
         <div class="field">
           <label>Valor (R$)</label>
-          <input type="number" id="edit-amount" step="0.01" required />
+          <input type="text" id="edit-amount" inputmode="decimal" autocomplete="off" required />
         </div>
 
         <div class="field">
@@ -235,6 +277,25 @@
       </form>
     </div>
   </div>
+
+  <div id="dialog" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-text" class="dialog-text"></p>
+      <form id="dialog-form" class="modal-form">
+        <div class="field hidden" id="dialog-field">
+          <input type="text" id="dialog-input" maxlength="40" autocomplete="off" />
+        </div>
+        <div class="modal-actions">
+          <button id="dialog-cancel" class="btn secondary" type="button">Cancelar</button>
+          <button id="dialog-ok" class="btn primary" type="submit">Confirmar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="script.js"></script>
