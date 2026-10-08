@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0f172a" />
+  <title>Esqueci a senha - BG Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="auth-body">
+  <main class="auth-shell single">
+    <section class="auth-panel">
+      <div class="auth-card">
+        <a class="back-link" href="./login.html">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+          Voltar para o login
+        </a>
+
+        <div id="step-form">
+          <div class="auth-badge">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>
+          </div>
+          <h1 class="auth-title">Esqueceu a senha?</h1>
+          <p class="auth-subtitle">Sem problema. Informe o e-mail da sua conta e enviaremos um link para criar uma nova senha.</p>
+
+          <form id="forgot-form" class="auth-form" novalidate>
+            <div class="field">
+              <label for="email">E-mail</label>
+              <div class="input-wrap">
+                <svg class="input-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+                <input id="email" type="email" placeholder="voce@email.com" autocomplete="email" required />
+              </div>
+            </div>
+
+            <p id="msg" class="msg" role="alert"></p>
+
+            <button class="btn primary full" type="submit" id="submit-btn">Enviar link</button>
+          </form>
+        </div>
+
+        <div id="step-sent" class="hidden">
+          <div class="auth-badge success">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+          </div>
+          <h1 class="auth-title">Confira seu e-mail</h1>
+          <p class="auth-subtitle">Se <strong id="sent-email"></strong> estiver cadastrado, você vai receber um link para redefinir a senha. Ele vale por 30 minutos.</p>
+          <ul class="tips">
+            <li>Não chegou? Olhe a caixa de spam ou promoções.</li>
+            <li>Confira se digitou o e-mail certo.</li>
+          </ul>
+          <button class="btn secondary full" type="button" id="resend-btn">Enviar de novo</button>
+          <p id="resend-msg" class="msg" role="status"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
+  <script src="forgot.js"></script>
+</body>
+</html>

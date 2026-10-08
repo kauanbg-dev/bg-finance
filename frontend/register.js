@@ -1,73 +1,27 @@
-const form = document.getElementById('register-form');
-const msg = document.getElementById('msg');
+const form = document.getElementById("register-form");
+const msg = document.getElementById("msg");
+const submitBtn = document.getElementById("submit-btn");
 
-function setMsg(text, ok = false) {
-  msg.textContent = text;
-  msg.style.color = ok ? '#86efac' : '#fca5a5';
-}
-
-form.addEventListener('submit', async (e) => {
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  msg.textContent = '';
 
-  const name = document.getElementById('name').value.trim();
-  const email = document.getElementById('email').value.trim().toLowerCase();
-  const password = document.getElementById('password').value;
-  const confirm = document.getElementById('confirm').value;
+  const name = document.getElementById("name").value.trim();
+  const email = document.getElementById("email").value.trim().toLowerCase();
+  const password = document.getElementById("password").value;
+  const confirm = document.getElementById("confirm").value;
 
-  // =========================
-  // VALIDAÇÕES
-  // =========================
+  if (!name) return setMsg(msg, "Digite seu nome.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setMsg(msg, "Digite um e-mail válido.");
+  if (password.length < 6) return setMsg(msg, "A senha deve ter pelo menos 6 caracteres.");
+  if (password !== confirm) return setMsg(msg, "As senhas não coincidem.");
 
-  if (!name) {
-    setMsg('Digite seu nome.');
-    return;
-  }
-
-  if (!email.includes('@') || !email.includes('.')) {
-    setMsg('Digite um email válido.');
-    return;
-  }
-
-  if (password.length < 6) {
-    setMsg('A senha deve ter pelo menos 6 caracteres.');
-    return;
-  }
-
-  if (password !== confirm) {
-    setMsg('As senhas não coincidem.');
-    return;
-  }
-
-  // =========================
-  // REQUEST
-  // =========================
-
+  setMsg(msg, "");
+  setLoading(submitBtn, true, "Criando conta…");
   try {
-    const res = await fetch('/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        email,
-        password
-      })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setMsg(data.error || 'Erro ao cadastrar.');
-      return;
-    }
-
-    setMsg('Conta criada com sucesso! Redirecionando...', true);
-
-    setTimeout(() => {
-      window.location.href = 'login.html';
-    }, 900);
-
+    await postJSON("/auth/register", { name, email, password });
+    window.location.href = `login.html?registered=1&email=${encodeURIComponent(email)}`;
   } catch (err) {
-    setMsg('Falha de conexão com o servidor.');
+    setMsg(msg, err.message === "Email ja cadastrado" ? "Esse e-mail já tem conta. Que tal entrar?" : err.message);
+    setLoading(submitBtn, false);
   }
 });

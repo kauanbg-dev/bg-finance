@@ -2,42 +2,82 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Login - BG Finance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0f172a" />
+  <title>Entrar - BG Finance</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="auth-body">
-  <div class="auth-card">
-    <div class="auth-brand">
-      <img src="logo.png" alt="BG" class="auth-logo" />
-      <div>
-        <h1 class="auth-title">BG Finance</h1>
-        <p class="auth-subtitle">Entre para acessar seu controle financeiro</p>
+  <main class="auth-shell">
+    <aside class="auth-hero">
+      <div class="hero-brand">
+        <img src="logo.png" alt="" class="auth-logo" />
+        <span>BG Finance</span>
       </div>
-    </div>
-
-    <form id="login-form" class="auth-form">
-      <div class="field">
-        <label>Email</label>
-        <input id="email" type="email" placeholder="seuemail@gmail.com" required />
+      <div class="hero-copy">
+        <h2>Seu dinheiro organizado, <span>sem planilha bagunçada.</span></h2>
+        <p>Lance receitas e despesas em segundos e veja para onde vai cada real.</p>
+        <ul class="hero-list">
+          <li><span class="hero-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>Gráficos por mês e por categoria</li>
+          <li><span class="hero-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg></span>Categoria sugerida pela descrição</li>
+          <li><span class="hero-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></svg></span>Exportação em CSV para o Excel</li>
+        </ul>
       </div>
-
-      <div class="field">
-        <label>Senha</label>
-        <input id="password" type="password" placeholder="••••••••" required />
+      <div class="hero-preview" aria-hidden="true">
+        <div class="hp-head">
+          <span>Saldo do mês</span>
+          <strong>R$ 3.375,50</strong>
+        </div>
+        <div class="hp-bars">
+          <i style="--h:55%"></i><i style="--h:72%"></i><i style="--h:48%"></i><i style="--h:86%"></i><i style="--h:64%"></i><i style="--h:92%"></i>
+        </div>
+        <div class="hp-foot"><span class="up">▲ 12% vs mês anterior</span></div>
       </div>
+    </aside>
 
-      <button class="btn primary full" type="submit">Entrar</button>
+    <section class="auth-panel">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img src="logo.png" alt="BG" class="auth-logo" />
+          <span>BG Finance</span>
+        </div>
 
-      <!-- LINKS CLICÁVEIS -->
-    <div class="auth-row">
-    <span style="color: rgba(255,255,255,.75); font-size: 13px;">Não tem conta?</span>
-    <a class="link" href="./register.html">Criar conta</a>
-    </div>
-      <p id="msg" class="msg"></p>
-    </form>
-  </div>
+        <h1 class="auth-title">Bem-vindo de volta</h1>
+        <p class="auth-subtitle">Entre para acessar seu controle financeiro.</p>
 
+        <form id="login-form" class="auth-form" novalidate>
+          <div class="field">
+            <label for="email">E-mail</label>
+            <div class="input-wrap">
+              <svg class="input-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+              <input id="email" type="email" placeholder="voce@email.com" autocomplete="email" required />
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="label-row">
+              <label for="password">Senha</label>
+              <a class="link small" href="./forgot.html" id="forgot-link">Esqueceu a senha?</a>
+            </div>
+            <div class="input-wrap">
+              <svg class="input-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              <input id="password" type="password" placeholder="Sua senha" autocomplete="current-password" required />
+              <button type="button" class="eye-btn" data-toggle-password="password"></button>
+            </div>
+          </div>
+
+          <p id="msg" class="msg" role="alert"></p>
+
+          <button class="btn primary full" type="submit" id="submit-btn">Entrar</button>
+        </form>
+
+        <p class="auth-switch">Ainda não tem conta? <a class="link" href="./register.html">Criar conta grátis</a></p>
+      </div>
+      <p class="auth-foot">© 2026 BG Finance • <a class="footer-link" href="https://www.instagram.com/eukauan.dev/" target="_blank" rel="noopener">@eukauan.dev</a></p>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
   <script src="login.js"></script>
 </body>
 </html>

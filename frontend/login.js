@@ -1,30 +1,34 @@
-const form = document.getElementById('login-form');
-const msg = document.getElementById('msg');
+const form = document.getElementById("login-form");
+const msg = document.getElementById("msg");
+const submitBtn = document.getElementById("submit-btn");
+const emailInput = document.getElementById("email");
+const params = new URLSearchParams(location.search);
 
-form.addEventListener('submit', async (e) => {
+if (localStorage.getItem("token")) window.location.href = "index.html";
+if (params.get("email")) emailInput.value = params.get("email");
+if (params.get("reset") === "1") setMsg(msg, "Senha alterada! Entre com a nova senha.", "success");
+if (params.get("registered") === "1") setMsg(msg, "Conta criada! Agora é só entrar.", "success");
+
+document.getElementById("forgot-link").addEventListener("click", (e) => {
+  const email = emailInput.value.trim();
+  if (email) e.currentTarget.href = `./forgot.html?email=${encodeURIComponent(email)}`;
+});
+
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  msg.textContent = '';
+  const email = emailInput.value.trim().toLowerCase();
+  const password = document.getElementById("password").value;
 
-  const email = document.getElementById('email').value.trim().toLowerCase();
-  const password = document.getElementById('password').value;
+  if (!email || !password) return setMsg(msg, "Preencha e-mail e senha.");
 
+  setMsg(msg, "");
+  setLoading(submitBtn, true, "Entrando…");
   try {
-    const res = await fetch('/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      msg.textContent = data.error || 'Erro ao entrar.';
-      return;
-    }
-
-    localStorage.setItem('token', data.token);
-    window.location.href = 'index.html';
+    const data = await postJSON("/auth/login", { email, password });
+    localStorage.setItem("token", data.token);
+    window.location.href = "index.html";
   } catch (err) {
-    msg.textContent = 'Falha de conexão com o servidor. Veja se o node server.js está rodando.';
+    setMsg(msg, err.status === 401 ? "E-mail ou senha incorretos." : err.message);
+    setLoading(submitBtn, false);
   }
 });

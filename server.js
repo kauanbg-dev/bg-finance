@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -9,6 +10,7 @@ const path = require('path');
 const db = require('./database');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(cors());
 app.use(express.json());
@@ -115,8 +117,158 @@ async function register(req, res) {
   }
 }
 
+const attempts = new Map();
+
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const recent = (attempts.get(key) || []).filter((t) => now - t < windowMs);
+  recent.push(now);
+  attempts.set(key, recent);
+  return recent.length > max;
+}
+
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [key, list] of attempts) {
+    if (!list.some((t) => t > cutoff)) attempts.delete(key);
+  }
+}, 10 * 60 * 1000).unref();
+
+const RESET_TTL_MINUTES = 30;
+const APP_URL = (process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function parseSender(value) {
+  const match = String(value || '').match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (match) return { name: match[1] || 'BG Finance', email: match[2] };
+  return { name: 'BG Finance', email: String(value || '').trim() };
+}
+
+async function deliverEmail({ to, subject, html }) {
+  if (process.env.BREVO_API_KEY) {
+    const sender = parseSender(process.env.MAIL_FROM);
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ sender, to: [{ email: to }], subject, htmlContent: html }),
+    });
+    if (!response.ok) throw new Error(`Brevo respondeu ${response.status}: ${await response.text()}`);
+    return true;
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: process.env.MAIL_FROM || 'BG Finance <onboarding@resend.dev>',
+        to: [to],
+        subject,
+        html,
+      }),
+    });
+    if (!response.ok) throw new Error(`Resend respondeu ${response.status}: ${await response.text()}`);
+    return true;
+  }
+
+  return false;
+}
+
+async function sendResetEmail(to, name, link) {
+  const firstName = (String(name || '').split(' ')[0] || 'Oi').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;background:#0f172a;padding:32px;color:#e5e7eb">
+      <div style="max-width:480px;margin:0 auto;background:#111c31;border-radius:16px;padding:28px;border:1px solid #1f2a44">
+        <h2 style="margin:0 0 12px;color:#93c5fd">BG Finance</h2>
+        <p>${firstName}, recebemos um pedido para redefinir a senha da sua conta.</p>
+        <p style="margin:24px 0">
+          <a href="${link}" style="background:#3b82f6;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Criar nova senha</a>
+        </p>
+        <p style="color:#9ca3af;font-size:13px">O link vale por ${RESET_TTL_MINUTES} minutos e só pode ser usado uma vez. Se não foi você, ignore este e-mail: sua senha continua a mesma.</p>
+      </div>
+    </div>`;
+
+  const sent = await deliverEmail({ to, subject: 'Redefinir sua senha do BG Finance', html });
+  if (!sent) console.warn(`Nenhum provedor de e-mail configurado. Link de redefinicao para ${to}: ${link}`);
+}
+
+async function forgotPassword(req, res) {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const generic = { ok: true, message: 'Se esse e-mail estiver cadastrado, enviaremos um link para redefinir a senha.' };
+
+  if (!email.includes('@')) {
+    return res.status(400).json({ error: 'Digite um e-mail valido' });
+  }
+
+  if (rateLimited(`forgot:${req.ip}`, 5, 15 * 60 * 1000) || rateLimited(`forgot:${email}`, 3, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  }
+
+  try {
+    const result = await db.query('SELECT id, name FROM users WHERE email = $1', [email]);
+    const user = result.rows[0];
+    if (!user) return res.json(generic);
+
+    const token = crypto.randomBytes(32).toString('base64url');
+    await db.query('DELETE FROM password_resets WHERE user_id = $1 AND used_at IS NULL', [user.id]);
+    await db.query(
+      `INSERT INTO password_resets (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)`,
+      [user.id, hashToken(token), String(RESET_TTL_MINUTES)]
+    );
+
+    await sendResetEmail(email, user.name, `${APP_URL}/reset.html?token=${token}`);
+    return res.json(generic);
+  } catch (err) {
+    console.error('Erro ao solicitar redefinicao de senha:', err);
+    return res.status(500).json({ error: 'Nao foi possivel enviar o e-mail agora. Tente mais tarde.' });
+  }
+}
+
+async function resetPassword(req, res) {
+  const token = String(req.body.token || '');
+  const password = String(req.body.password || '');
+
+  if (!token || password.length < 6) {
+    return res.status(400).json({ error: 'Senha muito curta (min. 6 caracteres)' });
+  }
+
+  if (rateLimited(`reset:${req.ip}`, 10, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  }
+
+  try {
+    const result = await db.query(
+      `UPDATE password_resets
+       SET used_at = NOW()
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+       RETURNING user_id`,
+      [hashToken(token)]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return res.status(400).json({ error: 'Link invalido ou expirado. Peca um novo.' });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    await db.query('UPDATE users SET password = $1 WHERE id = $2', [hash, row.user_id]);
+    await db.query('DELETE FROM password_resets WHERE user_id = $1', [row.user_id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Erro ao redefinir senha:', err);
+    return res.status(500).json({ error: 'Erro ao redefinir senha' });
+  }
+}
+
 async function login(req, res) {
   const { email, password } = normalizeAuthInput(req.body);
+
+  if (rateLimited(`login:${req.ip}:${email}`, 10, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  }
 
   try {
     const result = await db.query(
@@ -157,6 +309,8 @@ app.post('/auth/register', register);
 app.post('/register', register);
 app.post('/auth/login', login);
 app.post('/login', login);
+app.post('/auth/forgot', forgotPassword);
+app.post('/auth/reset', resetPassword);
 
 app.get('/me', authenticateToken, async (req, res) => {
   try {
