@@ -542,6 +542,8 @@ input[type="number"]{
 }
 
 .topbar{
+  position: relative;
+  z-index: 5;
   display:flex;
   justify-content:space-between;
   align-items:center;
@@ -582,19 +584,42 @@ input[type="number"]{
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 100%;
+}
+.account{
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 .user-mini{
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
   background: rgba(var(--wash),.05);
   border: 1px solid rgba(var(--wash),.08);
-  padding: 4px;
-  border-radius: 50%;
+  padding: 6px 12px 6px 6px;
+  border-radius: 16px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.user-mini:hover,
+.user-mini[aria-expanded="true"]{
+  border-color: rgba(var(--wash),.22);
+  background: rgba(var(--wash),.08);
+}
+.user-mini:focus-visible{
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 .avatar{
-  width: 32px;
-  height: 32px;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: linear-gradient(135deg,#3b82f6,#a855f7);
   display: flex;
@@ -602,21 +627,108 @@ input[type="number"]{
   justify-content: center;
   font-weight: 800;
   color: white;
-  font-size: 14px;
+  font-size: 16px;
+  overflow: hidden;
+}
+.avatar img{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .user-text{
-  display: none;
+  display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .mini-label{
   font-size: 11px;
   color: rgba(var(--wash),.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.account-menu{
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--menu);
+  border: 1px solid rgba(var(--wash),.1);
+  box-shadow: 0 18px 50px rgba(0,0,0,.28);
+}
+.account-menu[hidden]{ display: none; }
+.account-head{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.account-photo{
+  width: 64px;
+  height: 64px;
+  font-size: 24px;
+}
+.account-id{ min-width: 0; }
+.account-name{
+  display: block;
+  font-size: 16px;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+.account-mail,
+.account-since{
+  display: block;
+}
+.account-mail{
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
+.account-since{
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.account-actions{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-file{
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+.account-file input{
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.account-actions .btn{ width: 100%; min-height: 44px; }
 .mini-email{
   font-size: 13px;
   font-weight: 600;
   color: var(--link);
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cards{
@@ -1356,10 +1468,10 @@ li button{
   .brand-logo{ width: 48px; height: 48px; border-radius: 14px; }
   .brand-text h1{ font-size: 24px; }
   .subtitle{ font-size: 13px; margin-top: 4px; }
-  .top-actions{ gap: 12px; }
-  .user-mini{ flex: 0 1 auto; padding: 8px 12px; border-radius: 14px; }
-  .user-text{ display: flex; }
-  .avatar{ width: 36px; height: 36px; }
+  .top-actions{ flex: 0 1 auto; gap: 12px; }
+  .account{ flex: 0 1 auto; }
+  .user-mini{ width: auto; max-width: 280px; padding: 8px 12px; border-radius: 14px; }
+  .account-menu{ left: auto; width: 280px; }
   #logout-btn{ padding: 12px 14px; }
 
   .cards{ grid-template-columns: 1fr 1fr; gap: 14px; }

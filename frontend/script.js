@@ -89,13 +89,6 @@ function parseToken() {
 }
 
 const payload = parseToken();
-const miniEmail = document.querySelector(".mini-email");
-const avatar = document.getElementById("user-avatar");
-if (miniEmail && avatar) {
-  const email = payload?.email || (previewMode ? "demo@bgfinance.app" : "");
-  miniEmail.textContent = email;
-  avatar.textContent = (email || "B").charAt(0).toUpperCase();
-}
 
 const form = document.getElementById("transaction-form");
 const tbody = document.getElementById("transaction-list");
@@ -240,8 +233,19 @@ function handleAuth(response) {
 }
 
 let previewSeq = 100;
+let previewProfile = {
+  id: 1,
+  name: "Conta demo",
+  email: "demo@bgfinance.app",
+  created_at: "2026-01-15T12:00:00.000Z",
+  avatar: null,
+};
 
 function previewApi(method, url, body) {
+  if (url === "/me") {
+    if (method === "PUT") previewProfile = { ...previewProfile, avatar: body?.avatar || null };
+    return { ...previewProfile };
+  }
   if (url === "/categories") {
     if (method === "POST") return { id: `custom-${++previewSeq}`, name: body.name, type: body.type, user_id: 1 };
     return [];
@@ -272,6 +276,183 @@ async function api(method, url, body) {
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.error || "Não foi possível completar a ação");
   return data;
+}
+
+/* ---------- conta ---------- */
+
+const accountBtn = document.getElementById("account-btn");
+const accountMenu = document.getElementById("account-menu");
+const miniEmail = document.querySelector(".mini-email");
+const miniLabel = document.querySelector(".mini-label");
+const avatarImg = document.getElementById("user-avatar-img");
+const avatarLetter = document.getElementById("user-avatar-letter");
+const menuPhoto = document.getElementById("account-photo-img");
+const menuLetter = document.getElementById("account-letter");
+const accountName = document.getElementById("account-name");
+const accountEmail = document.getElementById("account-email");
+const accountSince = document.getElementById("account-since");
+const photoInput = document.getElementById("account-photo-input");
+const photoLabel = document.getElementById("account-photo-label");
+const photoRemove = document.getElementById("account-photo-remove");
+const userId = payload?.id || (previewMode ? "preview" : "anon");
+const avatarKey = `bg-avatar:${userId}`;
+
+function sinceLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const when = date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return `Conta desde ${when}`;
+}
+
+function paintAvatar(dataUrl) {
+  const has = Boolean(dataUrl);
+  for (const img of [avatarImg, menuPhoto]) {
+    if (!img) continue;
+    img.hidden = !has;
+    if (has) img.src = dataUrl;
+    else img.removeAttribute("src");
+  }
+  if (avatarLetter) avatarLetter.hidden = has;
+  if (menuLetter) menuLetter.hidden = has;
+  if (photoLabel) photoLabel.textContent = has ? "Trocar foto" : "Colocar foto";
+  if (photoRemove) photoRemove.hidden = !has;
+}
+
+function setAccount(info) {
+  const email = info.email || "";
+  const name = (info.name || "").trim() || email.split("@")[0] || "Conta";
+  const letter = name.charAt(0).toUpperCase() || "B";
+  if (miniEmail) miniEmail.textContent = email;
+  if (miniLabel) miniLabel.textContent = name;
+  if (accountName) accountName.textContent = name;
+  if (accountEmail) accountEmail.textContent = email;
+  if (avatarLetter) avatarLetter.textContent = letter;
+  if (menuLetter) menuLetter.textContent = letter;
+  if (accountBtn) accountBtn.setAttribute("aria-label", `Abrir dados de ${name}`);
+  if (accountSince) {
+    const since = info.created_at ? sinceLabel(info.created_at) : "";
+    accountSince.textContent = since;
+    accountSince.hidden = !since;
+  }
+  paintAvatar(info.avatar || "");
+}
+
+function cachedAvatar() {
+  try {
+    return localStorage.getItem(avatarKey) || "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberAvatar(dataUrl) {
+  try {
+    if (dataUrl) localStorage.setItem(avatarKey, dataUrl);
+    else localStorage.removeItem(avatarKey);
+  } catch {
+    /* a foto continua na conta mesmo se o navegador recusar o cache */
+  }
+}
+
+setAccount({
+  email: payload?.email || (previewMode ? "demo@bgfinance.app" : ""),
+  name: previewMode ? "Conta demo" : "",
+  created_at: previewMode ? previewProfile.created_at : "",
+  avatar: cachedAvatar(),
+});
+
+function openAccount(open) {
+  if (!accountMenu || !accountBtn) return;
+  accountMenu.hidden = !open;
+  accountBtn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+accountBtn?.addEventListener("click", () => {
+  openAccount(accountMenu.hidden);
+});
+
+document.addEventListener("click", (event) => {
+  if (!accountMenu || accountMenu.hidden) return;
+  if (event.target.closest(".account")) return;
+  openAccount(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") openAccount(false);
+});
+
+function readPhoto(file) {
+  if (!file || !String(file.type || "").startsWith("image/")) {
+    return Promise.reject(new Error("Escolha uma imagem"));
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const size = 192;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      URL.revokeObjectURL(url);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      if (dataUrl.length > 140000) {
+        reject(new Error("Essa foto ficou grande demais. Tente outra."));
+        return;
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível ler a foto"));
+    };
+    img.src = url;
+  });
+}
+
+async function saveAvatar(dataUrl) {
+  paintAvatar(dataUrl);
+  const saved = await api("PUT", "/me", { avatar: dataUrl || null });
+  rememberAvatar(saved?.avatar || "");
+  paintAvatar(saved?.avatar || "");
+}
+
+photoInput?.addEventListener("change", async () => {
+  const file = photoInput.files && photoInput.files[0];
+  photoInput.value = "";
+  if (!file) return;
+  try {
+    await saveAvatar(await readPhoto(file));
+    toast("Foto atualizada");
+  } catch (err) {
+    paintAvatar(cachedAvatar());
+    toast(err.message || "Não foi possível salvar a foto", "error");
+  }
+});
+
+photoRemove?.addEventListener("click", async () => {
+  try {
+    await saveAvatar("");
+    toast("Foto removida");
+  } catch (err) {
+    paintAvatar(cachedAvatar());
+    toast(err.message || "Não foi possível remover a foto", "error");
+  }
+});
+
+if (previewMode && cachedAvatar()) previewProfile.avatar = cachedAvatar();
+
+if (token || previewMode) {
+  api("GET", "/me")
+    .then((me) => {
+      rememberAvatar(me?.avatar || "");
+      setAccount(me || {});
+    })
+    .catch(() => {});
 }
 
 /* ---------- categorias ---------- */

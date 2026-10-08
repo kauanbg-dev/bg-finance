@@ -13,7 +13,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '200kb' }));
 app.use(express.static(path.join(__dirname, 'frontend')));
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -312,10 +312,19 @@ app.post('/login', login);
 app.post('/auth/forgot', forgotPassword);
 app.post('/auth/reset', resetPassword);
 
+function validAvatar(value) {
+  return (
+    typeof value === 'string' &&
+    value.length > 32 &&
+    value.length <= 150000 &&
+    /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+  );
+}
+
 app.get('/me', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, name, email FROM users WHERE id = $1',
+      'SELECT id, name, email, created_at, avatar FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -327,6 +336,36 @@ app.get('/me', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Erro ao buscar usuario:', err);
     return res.status(500).json({ error: 'Erro ao buscar usuario' });
+  }
+});
+
+app.put('/me', authenticateToken, async (req, res) => {
+  if (!req.body || !Object.prototype.hasOwnProperty.call(req.body, 'avatar')) {
+    return res.status(400).json({ error: 'Nada para atualizar' });
+  }
+
+  const avatar = req.body.avatar;
+  if (avatar !== null && avatar !== '' && !validAvatar(avatar)) {
+    return res.status(400).json({ error: 'Foto invalida. Use uma imagem menor.' });
+  }
+
+  try {
+    const result = await db.query(
+      `UPDATE users
+       SET avatar = $1
+       WHERE id = $2
+       RETURNING id, name, email, created_at, avatar`,
+      [avatar || null, req.user.id]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Usuario nao encontrado' });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao salvar foto:', err);
+    return res.status(500).json({ error: 'Erro ao salvar foto' });
   }
 });
 

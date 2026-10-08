@@ -35,11 +35,36 @@
       </div>
 
       <div class="top-actions">
-        <div id="user-info" class="user-mini">
-          <div class="avatar" id="user-avatar">B</div>
-          <div class="user-text">
-            <span class="mini-label">Conta</span>
-            <span class="mini-email"></span>
+        <div class="account">
+          <button type="button" id="account-btn" class="user-mini" aria-expanded="false" aria-controls="account-menu" aria-haspopup="dialog" aria-label="Abrir dados da conta">
+            <span class="avatar" id="user-avatar">
+              <img id="user-avatar-img" alt="" hidden>
+              <span id="user-avatar-letter">B</span>
+            </span>
+            <span class="user-text">
+              <span class="mini-label">Conta</span>
+              <span class="mini-email"></span>
+            </span>
+          </button>
+          <div id="account-menu" class="account-menu" role="dialog" aria-label="Sua conta" hidden>
+            <div class="account-head">
+              <span class="avatar account-photo" id="account-photo">
+                <img id="account-photo-img" alt="" hidden>
+                <span id="account-letter">B</span>
+              </span>
+              <div class="account-id">
+                <strong class="account-name" id="account-name">Conta</strong>
+                <span class="account-mail" id="account-email"></span>
+              </div>
+            </div>
+            <p class="account-since" id="account-since" hidden></p>
+            <div class="account-actions">
+              <label class="btn secondary account-file">
+                <input id="account-photo-input" type="file" accept="image/jpeg,image/png,image/webp,image/*">
+                <span id="account-photo-label">Colocar foto</span>
+              </label>
+              <button type="button" id="account-photo-remove" class="btn secondary" hidden>Remover foto</button>
+            </div>
           </div>
         </div>
 
