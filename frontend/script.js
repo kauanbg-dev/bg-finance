@@ -786,11 +786,14 @@ function chartDefaults() {
     Chart.register(htmlLegendPlugin);
     chartDefaults.done = true;
   }
-  Chart.defaults.color = "#cbd5e1";
-  Chart.defaults.borderColor = "rgba(255,255,255,.06)";
+  const light = document.documentElement.dataset.theme === "light";
+  Chart.defaults.color = light ? "#475569" : "#cbd5e1";
+  Chart.defaults.borderColor = light ? "rgba(15,23,42,.08)" : "rgba(255,255,255,.06)";
   Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
   Chart.defaults.plugins.legend.display = false;
-  Chart.defaults.plugins.tooltip.backgroundColor = "#0b1220";
+  Chart.defaults.plugins.tooltip.backgroundColor = "#0f172a";
+  Chart.defaults.plugins.tooltip.titleColor = "#f8fafc";
+  Chart.defaults.plugins.tooltip.bodyColor = "#e5e7eb";
   Chart.defaults.plugins.tooltip.borderColor = "rgba(255,255,255,.12)";
   Chart.defaults.plugins.tooltip.borderWidth = 1;
   Chart.defaults.plugins.tooltip.padding = 10;
@@ -951,7 +954,7 @@ function updateCharts(rows, income, expense) {
     type: "doughnut",
     data: {
       labels: mixLabels,
-      datasets: [{ data: mixData, backgroundColor: mixColors, borderColor: "#0f172a", borderWidth: 3, hoverOffset: 6 }],
+      datasets: [{ data: mixData, backgroundColor: mixColors, borderColor: getComputedStyle(document.documentElement).getPropertyValue("--bg1").trim() || "#0f172a", borderWidth: 3, hoverOffset: 6 }],
     },
     options: {
       responsive: true,
@@ -1399,4 +1402,8 @@ function enhanceControls() {
 document.addEventListener("click", (e) => {
   if (e.target.closest(".month-panel")) return;
   document.querySelectorAll(".menu-select.open, .month-picker.open").forEach((el) => el.classList.remove("open"));
+});
+
+document.addEventListener("bg-theme", () => {
+  if (document.getElementById("chartFlow")) renderDashboard();
 });

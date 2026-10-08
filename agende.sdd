@@ -1,0 +1,51 @@
+# BG Finance — mobile primeiro
+
+## Regra
+
+O celular é a tela principal. Toda mudança de layout, componente ou fluxo começa
+pelo celular (360px a 430px de largura) e só depois ganha o ajuste para tablet e
+PC. O desktop deixa de ser a base.
+
+## Por que
+
+O uso real é no celular: lançar uma despesa na hora, conferir o saldo do mês e
+abrir o app pela tela inicial. Hoje o CSS é escrito para desktop e corrigido com
+`@media (max-width: ...)` em `frontend/style.css` (960px, 720px, 520px, 420px e
+360px). Isso inverte a prioridade e deixa o celular sempre como exceção.
+
+## Como escrever CSS daqui para frente
+
+- O estilo base, fora de qualquer `@media`, é o do celular.
+- Telas maiores entram com `min-width`, nesta ordem:
+  - `@media (min-width: 720px)` tablet
+  - `@media (min-width: 1100px)` desktop
+- Alvo de toque: botões, ícones e itens de lista com no mínimo 44px de altura.
+- Texto de campo com no mínimo 16px, para o iOS não dar zoom ao focar.
+- Respeitar `env(safe-area-inset-*)`: o app roda em tela cheia no iPhone.
+- Nada de rolagem horizontal. Tabelas viram cartões no celular.
+- Testar primeiro em 390px de largura, depois em 360px, e só então no desktop.
+
+## App instalável (PWA)
+
+O usuário instala o BG Finance na tela inicial e abre sem barra do navegador.
+
+- `frontend/manifest.webmanifest` com nome "BG Finance", `display: standalone`,
+  `start_url: /index.html`, cor de tema `#0f172a` e ícones 192 e 512.
+- `frontend/sw.js`: guarda em cache só o que é estático (HTML, CSS, JS, logo e
+  ícones). Chamadas de `/auth` e da API nunca entram no cache, porque os dados
+  são da conta de cada pessoa.
+- Link do manifest e meta `apple-mobile-web-app-capable` nas cinco páginas:
+  `index.html`, `login.html`, `register.html`, `forgot.html` e `reset.html`.
+- Ícones gerados a partir de `frontend/logo.png`.
+- O service worker só é registrado em `https`, então no Render funciona e no
+  `localhost` sem https fica desligado.
+
+## Ordem de trabalho
+
+1. Reescrever `frontend/style.css` com a base mobile e os dois breakpoints de
+   `min-width`, mantendo o visual atual.
+2. Conferir no navegador em 390px e 360px: login, cadastro, painel, formulário de
+   lançamento, lista, gráficos e os modais de editar e de confirmar.
+3. Adicionar manifest, ícones, service worker e as metas nas cinco páginas.
+4. Instalar pela tela inicial de um celular e confirmar que abre em tela cheia e
+   que login, lançamento e "esqueceu a senha" continuam funcionando.
