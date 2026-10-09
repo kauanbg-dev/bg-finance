@@ -209,20 +209,25 @@ const dialogOk = document.getElementById("dialog-ok");
 const dialogCancel = document.getElementById("dialog-cancel");
 let closeActiveDialog = null;
 
-function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", input = false }) {
+function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", input = false, inputType = "text", danger = false }) {
   return new Promise((resolve) => {
     dialogTitle.textContent = title;
     dialogText.textContent = text;
     dialogField.classList.toggle("hidden", !input);
+    dialogInput.type = input ? inputType : "text";
+    dialogInput.autocomplete = inputType === "password" ? "current-password" : "off";
     dialogInput.value = "";
     dialogInput.placeholder = placeholder;
     dialogOk.textContent = okLabel;
+    dialogOk.classList.toggle("danger", danger);
     dialog.classList.remove("hidden");
     (input ? dialogInput : dialogOk).focus();
 
     const backdrop = dialog.querySelector(".modal-backdrop");
     const finish = (value) => {
       dialog.classList.add("hidden");
+      dialogInput.type = "text";
+      dialogOk.classList.remove("danger");
       dialogForm.removeEventListener("submit", onSubmit);
       dialogCancel.removeEventListener("click", onCancel);
       backdrop.removeEventListener("click", onCancel);
@@ -286,6 +291,7 @@ function shiftDay(iso, delta) {
 
 function previewApi(method, url, body) {
   if (url === "/me") {
+    if (method === "DELETE") return { deleted: true };
     if (method === "PUT") previewProfile = { ...previewProfile, avatar: body?.avatar || null };
     return { ...previewProfile };
   }
@@ -501,6 +507,30 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") openAccount(false);
+});
+
+document.getElementById("delete-account")?.addEventListener("click", async () => {
+  openAccount(false);
+  const password = await askDialog({
+    title: "Apagar conta",
+    text: "Isso apaga a conta, os lançamentos e as dívidas. Não tem como desfazer.",
+    placeholder: "Sua senha",
+    okLabel: "Apagar conta",
+    input: true,
+    inputType: "password",
+    danger: true,
+  });
+  if (!password) return;
+  try {
+    await api("DELETE", "/me", { password });
+    localStorage.removeItem("token");
+    localStorage.removeItem(SETTINGS_KEY);
+    localStorage.removeItem(CATEGORY_KEY);
+    localStorage.removeItem(avatarKey);
+    window.location.href = "login.html";
+  } catch (err) {
+    toast(err.message, "error");
+  }
 });
 
 function readPhoto(file) {

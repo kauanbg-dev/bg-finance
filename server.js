@@ -369,6 +369,25 @@ app.put('/me', authenticateToken, async (req, res) => {
   }
 });
 
+app.delete('/me', authenticateToken, async (req, res) => {
+  const password = String(req.body?.password || '');
+  if (!password) return res.status(400).json({ error: 'Informe a senha' });
+
+  try {
+    const result = await db.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
+
+    const valid = await bcrypt.compare(password, result.rows[0].password);
+    if (!valid) return res.status(400).json({ error: 'Senha incorreta' });
+
+    await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    return res.json({ deleted: true });
+  } catch (err) {
+    console.error('Erro ao apagar conta:', err);
+    return res.status(500).json({ error: 'Erro ao apagar conta' });
+  }
+});
+
 app.get('/categories', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
