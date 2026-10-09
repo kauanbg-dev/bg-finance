@@ -31,6 +31,21 @@ async function initDatabase() {
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS debts (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(120) NOT NULL,
+      kind VARCHAR(20) NOT NULL CHECK (kind IN ('credit_card', 'loan', 'other')),
+      amount NUMERIC(12,2) NOT NULL,
+      due_date DATE,
+      notes VARCHAR(240),
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS categories (

@@ -24,6 +24,7 @@ const ICON = {
   chevron: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 13l2.5-7h11L20 13v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
 };
 const KEYWORDS = [
   [/sal[aá]rio|pagamento|holerite/i, "Salário", "income"],
@@ -136,6 +137,29 @@ let allTransactions = [];
 let apiCategories = [];
 let sortKey = "date";
 let sortDir = "desc";
+const CHART_OPTIONS = [
+  { id: "flow", title: "Fluxo mensal", hint: "Receitas, despesas e saldo acumulado" },
+  { id: "category", title: "Por categoria", hint: "Quanto cada grupo pesa no período" },
+  { id: "mix", title: "Composição", hint: "Receitas contra despesas, ou fatia por categoria" },
+  { id: "daily", title: "Evolução diária", hint: "Entradas, saídas e saldo do dia" },
+];
+const SETTINGS_KEY = "bg-finance-settings";
+const DEBT_KINDS = {
+  credit_card: "Cartão",
+  loan: "Empréstimo",
+  other: "Outro",
+};
+
+function readStoredCharts() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    return raw.charts && typeof raw.charts === "object" ? raw.charts : {};
+  } catch {
+    return {};
+  }
+}
+
+let chartPrefs = readStoredCharts();
 let charts = {};
 let loading = true;
 let categoryTouched = false;
@@ -241,6 +265,25 @@ let previewProfile = {
   avatar: null,
 };
 
+let previewSettings = { charts: { flow: true, category: true, mix: true, daily: true } };
+let previewDebts = [];
+
+function seedPreviewDebts() {
+  if (previewDebts.length) return;
+  const soon = shiftDay(today(), 3);
+  const late = shiftDay(today(), -4);
+  previewDebts = [
+    { id: ++previewSeq, name: "Cartão de crédito", kind: "credit_card", amount: 842.3, due_date: soon, notes: "Fatura do mês", paid_at: null },
+    { id: ++previewSeq, name: "Empréstimo pessoal", kind: "loan", amount: 3200, due_date: late, notes: "Parcela 4 de 12", paid_at: null },
+  ];
+}
+
+function shiftDay(iso, delta) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + delta);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function previewApi(method, url, body) {
   if (url === "/me") {
     if (method === "PUT") previewProfile = { ...previewProfile, avatar: body?.avatar || null };
@@ -249,6 +292,85 @@ function previewApi(method, url, body) {
   if (url === "/categories") {
     if (method === "POST") return { id: `custom-${++previewSeq}`, name: body.name, type: body.type, user_id: 1 };
     return [];
+  }
+  if (url === "/settings") {
+    if (method === "PUT" && body?.charts) previewSettings = { charts: { ...previewSettings.charts, ...body.charts } };
+    return { charts: { ...previewSettings.charts } };
+  }
+  if (url === "/imports/statement" && method === "POST") {
+    let added = 0;
+    let skipped = 0;
+    const invoices = new Map();
+    for (const row of body?.rows || []) {
+      const signed = Number(row.amount);
+      const description = String(row.description || "").trim();
+      const day = String(row.date || "").slice(0, 10);
+      if (!description || !day || !Number.isFinite(signed) || signed === 0) {
+        skipped += 1;
+        continue;
+      }
+      const type = body.source === "card" ? (signed < 0 ? "income" : "expense") : signed < 0 ? "expense" : "income";
+      const amount = Math.abs(signed);
+      const exists = allTransactions.some(
+        (t) => t.description === description && Number(t.amount) === amount && t.type === type && String(t.date).slice(0, 10) === day
+      );
+      if (exists) {
+        skipped += 1;
+        continue;
+      }
+      allTransactions.push({
+        id: ++previewSeq,
+        description,
+        amount,
+        type,
+        category_name: row.category || "Outros",
+        date: day,
+      });
+      added += 1;
+      if (body.source === "card" && type === "expense") {
+        const month = day.slice(0, 7);
+        invoices.set(month, (invoices.get(month) || 0) + amount);
+      }
+    }
+    seedPreviewDebts();
+    for (const [month, total] of invoices) {
+      const name = `Fatura do cartão ${month.slice(5)}/${month.slice(0, 4)}`;
+      const current = previewDebts.find((d) => d.name === name && !d.paid_at);
+      if (current) current.amount = Math.round(total * 100) / 100;
+      else {
+        previewDebts.unshift({
+          id: ++previewSeq,
+          name,
+          kind: "credit_card",
+          amount: Math.round(total * 100) / 100,
+          due_date: null,
+          notes: "Importada da fatura",
+          paid_at: null,
+        });
+      }
+    }
+    return { added, skipped, debts: invoices.size };
+  }
+  if (url === "/debts" || url.startsWith("/debts/")) {
+    seedPreviewDebts();
+    const id = url.split("/")[2];
+    if (method === "GET") return previewDebts.map((d) => ({ ...d }));
+    if (method === "POST") {
+      const created = { ...body, id: ++previewSeq, paid_at: body.paid ? new Date().toISOString() : null };
+      previewDebts.unshift(created);
+      return { ...created };
+    }
+    const index = previewDebts.findIndex((d) => String(d.id) === id);
+    if (method === "PUT" && index >= 0) {
+      previewDebts[index] = {
+        ...previewDebts[index],
+        ...body,
+        paid_at: body.paid ? previewDebts[index].paid_at || new Date().toISOString() : null,
+      };
+      return { ...previewDebts[index] };
+    }
+    if (method === "DELETE" && index >= 0) previewDebts.splice(index, 1);
+    return {};
   }
   const id = url.split("/")[2];
   if (method === "GET") return allTransactions.map((t) => ({ ...t }));
@@ -1001,6 +1123,7 @@ function markEmpty(canvasId, empty) {
 }
 
 function updateCharts(rows, income, expense) {
+  if (document.getElementById("view-home")?.hidden) return;
   if (typeof Chart === "undefined") return;
   chartDefaults();
   const byMonth = new Map();
@@ -1034,6 +1157,8 @@ function updateCharts(rows, income, expense) {
     return running;
   });
 
+  if (chartPrefs.flow === false) destroyChart("flow");
+  else {
   markEmpty("chartFlow", !rows.length);
   destroyChart("flow");
   charts.flow = new Chart(document.getElementById("chartFlow"), {
@@ -1090,10 +1215,13 @@ function updateCharts(rows, income, expense) {
       },
     },
   });
+  }
 
   const catEntries = Array.from(byCat.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
+  if (chartPrefs.category === false) destroyChart("category");
+  else {
   markEmpty("chartCategory", !catEntries.length);
   destroyChart("category");
   charts.category = new Chart(document.getElementById("chartCategory"), {
@@ -1124,11 +1252,14 @@ function updateCharts(rows, income, expense) {
       },
     },
   });
+  }
 
   const mixMode = chartMode?.value || "mix";
   const mixLabels = mixMode === "cats" ? catEntries.map((c) => c[0]) : ["Receitas", "Despesas"];
   const mixData = mixMode === "cats" ? catEntries.map((c) => c[1]) : [income, expense];
   const mixColors = mixMode === "cats" ? catEntries.map((c) => catColor(c[0])) : ["#34d399", "#f87171"];
+  if (chartPrefs.mix === false) destroyChart("mix");
+  else {
   markEmpty("chartMix", !mixData.some(Boolean));
   destroyChart("mix");
   charts.mix = new Chart(document.getElementById("chartMix"), {
@@ -1150,8 +1281,11 @@ function updateCharts(rows, income, expense) {
       },
     },
   });
+  }
 
   const days = Array.from(byDay.keys()).sort();
+  if (chartPrefs.daily === false) destroyChart("daily");
+  else {
   markEmpty("chartDaily", !days.length);
   destroyChart("daily");
   charts.daily = new Chart(document.getElementById("chartDaily"), {
@@ -1200,6 +1334,7 @@ function updateCharts(rows, income, expense) {
       },
     },
   });
+  }
 }
 
 function renderPivot(rows) {
@@ -1361,6 +1496,118 @@ exportBtn?.addEventListener("click", () => {
   toast(`${rows.length} lançamento${rows.length === 1 ? "" : "s"} exportado${rows.length === 1 ? "" : "s"}`);
 });
 
+const importHint = document.getElementById("import-hint");
+const statementFile = document.getElementById("statement-file");
+let importSource = "account";
+
+document.querySelectorAll("#import-source [data-source]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    importSource = btn.dataset.source;
+    document.querySelectorAll("#import-source [data-source]").forEach((el) => {
+      el.classList.toggle("active", el === btn);
+    });
+    if (importHint) {
+      importHint.textContent = importSource === "card"
+        ? "Fatura fechada. As compras viram despesas e o total do mês vira uma dívida."
+        : "Extrato da conta. Valor positivo vira receita e negativo vira despesa.";
+    }
+  });
+});
+
+function parseCsvLine(line, sep) {
+  const out = [];
+  let cur = "";
+  let quoted = false;
+  for (const ch of line) {
+    if (ch === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (ch === sep && !quoted) {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function normalizeImportDay(value) {
+  const raw = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  if (/^\d{8}/.test(raw)) return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  return "";
+}
+
+function parseImportAmount(value) {
+  let s = String(value || "").trim().replace(/[R$\s]/g, "");
+  if (!s) return NaN;
+  if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.includes(",")) s = s.replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function parseStatementCsv(text) {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return [];
+  const sep = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
+  const header = parseCsvLine(lines[0], sep).map((h) => h.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, ""));
+  const find = (...names) => header.findIndex((h) => names.includes(h));
+  const dateI = find("date", "data");
+  const titleI = find("title", "description", "descricao", "memo", "nome");
+  const amountI = find("amount", "valor", "value");
+  const catI = find("category", "categoria");
+  const start = dateI >= 0 || titleI >= 0 ? 1 : 0;
+  return lines.slice(start).map((line) => {
+    const cols = parseCsvLine(line, sep);
+    return {
+      date: normalizeImportDay(dateI >= 0 ? cols[dateI] : cols[0]),
+      description: (titleI >= 0 ? cols[titleI] : cols[1] || "").slice(0, 120),
+      amount: parseImportAmount(amountI >= 0 ? cols[amountI] : cols[2]),
+      category: catI >= 0 ? cols[catI] || "" : "",
+    };
+  }).filter((row) => row.date && row.description && Number.isFinite(row.amount) && row.amount !== 0);
+}
+
+function parseStatementOfx(text) {
+  return text.split(/<STMTTRN>/i).slice(1).map((block) => {
+    const grab = (tag) => {
+      const match = block.match(new RegExp(`<${tag}>([^<\\r\\n]+)`, "i"));
+      return match ? match[1].trim() : "";
+    };
+    return {
+      date: normalizeImportDay(grab("DTPOSTED")),
+      description: (grab("MEMO") || grab("NAME")).slice(0, 120),
+      amount: parseImportAmount(grab("TRNAMT")),
+      category: "",
+    };
+  }).filter((row) => row.date && row.description && Number.isFinite(row.amount) && row.amount !== 0);
+}
+
+statementFile?.addEventListener("change", async () => {
+  const file = statementFile.files?.[0];
+  statementFile.value = "";
+  if (!file) return;
+  const text = await file.text();
+  const ofx = /\.ofx$|\.qfx$/i.test(file.name) || /<OFX>/i.test(text);
+  const rows = ofx ? parseStatementOfx(text) : parseStatementCsv(text);
+  if (!rows.length) return toast("Não encontrei lançamentos nesse arquivo", "error");
+  try {
+    const result = await api("POST", "/imports/statement", { source: importSource, rows });
+    await Promise.all([loadTransactions(), loadDebts()]);
+    const debtNote = result.debts ? ` e ${result.debts} dívida${result.debts === 1 ? "" : "s"}` : "";
+    toast(`${result.added} lançamento${result.added === 1 ? "" : "s"} importado${result.added === 1 ? "" : "s"}${debtNote}`);
+    if (importSource === "card" && result.debts) showView("debts");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+});
+
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const description = descriptionInput.value.trim();
@@ -1397,12 +1644,401 @@ document.addEventListener("keydown", (e) => {
   else if (!editModal.classList.contains("hidden")) closeEditModal();
 });
 
+/* ---------- menu, dívidas e ajustes ---------- */
+
+const VIEWS = new Set(["home", "debts", "settings"]);
+let debts = [];
+let editingDebtId = null;
+
+const debtForm = document.getElementById("debt-form");
+const debtName = document.getElementById("debt-name");
+const debtAmount = document.getElementById("debt-amount");
+const debtDue = document.getElementById("debt-due");
+const debtKind = document.getElementById("debt-kind");
+const debtNotes = document.getElementById("debt-notes");
+const debtSubmit = document.getElementById("debt-submit");
+const debtCancel = document.getElementById("debt-cancel");
+
+function viewFromHash() {
+  const name = location.hash.replace("#", "");
+  return VIEWS.has(name) ? name : "home";
+}
+
+function showView(name, scroll = true) {
+  if (!VIEWS.has(name)) name = "home";
+  document.querySelectorAll(".app-view").forEach((el) => {
+    el.hidden = el.id !== `view-${name}`;
+  });
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
+    const on = btn.dataset.view === name;
+    btn.classList.toggle("is-active", on);
+    if (on) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+  });
+  const nextHash = name === "home" ? "" : `#${name}`;
+  if (location.hash !== nextHash) history.replaceState(null, "", location.pathname + location.search + nextHash);
+  if (name === "home") renderDashboard();
+  if (scroll) window.scrollTo(0, 0);
+}
+
+function pinTabbar() {
+  const bar = document.querySelector(".tabbar");
+  const vv = window.visualViewport;
+  if (!bar || !vv) return;
+  const hiddenBelow = Math.max(0, window.innerHeight - (vv.offsetTop + vv.height));
+  bar.style.setProperty("--vv-shift", `${Math.round(hiddenBelow)}px`);
+}
+
+function bindNavigation() {
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+  window.addEventListener("hashchange", () => showView(viewFromHash(), false));
+  pinTabbar();
+  window.visualViewport?.addEventListener("resize", pinTabbar);
+  window.visualViewport?.addEventListener("scroll", pinTabbar);
+  window.addEventListener("resize", pinTabbar);
+}
+
+function applyChartPrefs() {
+  const anyOn = CHART_OPTIONS.some((opt) => chartPrefs[opt.id] !== false);
+  CHART_OPTIONS.forEach((opt) => {
+    const card = document.querySelector(`[data-chart="${opt.id}"]`);
+    if (card) card.hidden = chartPrefs[opt.id] === false;
+  });
+  const grid = document.querySelector(".charts-grid");
+  const note = document.getElementById("charts-off");
+  if (grid) grid.hidden = !anyOn;
+  if (note) note.hidden = anyOn;
+  document.querySelectorAll("[data-chart-toggle]").forEach((input) => {
+    input.checked = chartPrefs[input.dataset.chartToggle] !== false;
+  });
+}
+
+function buildChartPrefs() {
+  const list = document.getElementById("chart-prefs");
+  if (!list) return;
+  CHART_OPTIONS.forEach((opt) => {
+    const row = document.createElement("label");
+    row.className = "pref-row";
+    const copy = document.createElement("span");
+    copy.className = "pref-copy";
+    const title = document.createElement("strong");
+    title.textContent = opt.title;
+    const hint = document.createElement("span");
+    hint.textContent = opt.hint;
+    copy.append(title, hint);
+    const sw = document.createElement("span");
+    sw.className = "switch";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = chartPrefs[opt.id] !== false;
+    input.dataset.chartToggle = opt.id;
+    input.setAttribute("role", "switch");
+    input.setAttribute("aria-label", opt.title);
+    const knob = document.createElement("i");
+    sw.append(input, knob);
+    row.append(copy, sw);
+    input.addEventListener("change", () => saveChartPref(opt.id, input.checked));
+    list.appendChild(row);
+  });
+}
+
+async function loadSettings() {
+  try {
+    const data = await api("GET", "/settings");
+    if (data?.charts) {
+      chartPrefs = data.charts;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: chartPrefs }));
+    }
+  } catch (err) {
+    toast(err.message, "error");
+  }
+  applyChartPrefs();
+}
+
+async function saveChartPref(id, on) {
+  const previous = chartPrefs[id];
+  chartPrefs = { ...chartPrefs, [id]: on };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: chartPrefs }));
+  applyChartPrefs();
+  if (!document.getElementById("view-home")?.hidden) renderDashboard();
+  try {
+    const saved = await api("PUT", "/settings", { charts: { [id]: on } });
+    if (saved?.charts) chartPrefs = { ...chartPrefs, ...saved.charts };
+  } catch (err) {
+    chartPrefs = { ...chartPrefs, [id]: previous };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: chartPrefs }));
+    applyChartPrefs();
+    if (!document.getElementById("view-home")?.hidden) renderDashboard();
+    toast(err.message, "error");
+  }
+}
+
+function setDebtKind(kind) {
+  if (debtKind) debtKind.value = kind;
+  document.querySelectorAll("#debt-form [data-kind]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.kind === kind);
+  });
+}
+
+function resetDebtForm() {
+  editingDebtId = null;
+  debtForm?.reset();
+  setDebtKind("credit_card");
+  if (debtSubmit) debtSubmit.textContent = "Adicionar dívida";
+  debtCancel?.classList.add("hidden");
+}
+
+function dueMeta(iso) {
+  const day = String(iso || "").slice(0, 10);
+  if (!day) return null;
+  const diff = Math.round((new Date(`${day}T12:00:00`) - new Date(`${today()}T12:00:00`)) / 86400000);
+  if (diff < 0) {
+    const n = Math.abs(diff);
+    return { text: `Atrasada há ${n} dia${n === 1 ? "" : "s"}`, tone: "bad" };
+  }
+  if (diff === 0) return { text: "Vence hoje", tone: "warn" };
+  if (diff === 1) return { text: "Vence amanhã", tone: "warn" };
+  if (diff <= 7) return { text: `Vence em ${diff} dias`, tone: "warn" };
+  return null;
+}
+
+function debtAction(icon, label, onClick, extra = "") {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `action-btn ${extra}`.trim();
+  btn.innerHTML = icon;
+  btn.setAttribute("aria-label", label);
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function debtCard(debt, paid) {
+  const article = document.createElement("article");
+  article.className = "debt-item" + (paid ? " is-paid" : "");
+  const info = paid ? null : dueMeta(debt.due_date);
+
+  const top = document.createElement("div");
+  top.className = "debt-top";
+  const main = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "debt-title";
+  title.textContent = debt.name;
+  const meta = document.createElement("p");
+  meta.className = "debt-meta";
+  const parts = [];
+  if (debt.due_date) parts.push(`${paid ? "Vencia " : ""}${formatDate(String(debt.due_date).slice(0, 10))}`);
+  if (debt.notes) parts.push(debt.notes);
+  meta.textContent = parts.join(" · ") || (paid ? "Quitada" : "Sem vencimento");
+  const tags = document.createElement("div");
+  tags.className = "debt-tags";
+  const kind = document.createElement("span");
+  kind.className = "tag";
+  kind.textContent = DEBT_KINDS[debt.kind] || "Outro";
+  tags.appendChild(kind);
+  if (paid) {
+    const tag = document.createElement("span");
+    tag.className = "tag good";
+    tag.textContent = "Paga";
+    tags.appendChild(tag);
+  } else if (info) {
+    const tag = document.createElement("span");
+    tag.className = `tag ${info.tone}`;
+    tag.textContent = info.text;
+    tags.appendChild(tag);
+  }
+  main.append(title, meta, tags);
+  const amount = document.createElement("p");
+  amount.className = "debt-amount";
+  amount.textContent = money(debt.amount);
+  top.append(main, amount);
+
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  if (paid) {
+    const reopen = document.createElement("button");
+    reopen.type = "button";
+    reopen.className = "btn secondary";
+    reopen.textContent = "Reabrir";
+    reopen.addEventListener("click", () => setDebtPaid(debt, false));
+    actions.appendChild(reopen);
+  } else {
+    actions.append(
+      debtAction(ICON.check, "Marcar como paga", () => setDebtPaid(debt, true)),
+      debtAction(ICON.edit, "Editar", () => startEditDebt(debt))
+    );
+  }
+  actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeDebt(debt), "delete"));
+  article.append(top, actions);
+  return article;
+}
+
+function renderDebts() {
+  const open = debts.filter((d) => !d.paid_at);
+  const paid = debts.filter((d) => d.paid_at);
+  const total = open.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const openEl = document.getElementById("debt-open");
+  const hint = document.getElementById("debt-open-hint");
+  const nextEl = document.getElementById("debt-next");
+  const nextHint = document.getElementById("debt-next-hint");
+  const badge = document.getElementById("debt-badge");
+  const count = document.getElementById("debt-count");
+  const empty = document.getElementById("debt-empty");
+  const paidCard = document.getElementById("debt-paid-card");
+  if (openEl) openEl.textContent = money(total);
+  if (hint) hint.textContent = open.length === 1 ? "1 dívida" : open.length ? `${open.length} dívidas` : "Nenhuma dívida";
+  const upcoming = open.filter((d) => d.due_date).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+  const next = upcoming[0];
+  if (nextEl && nextHint) {
+    if (!next) {
+      nextEl.textContent = "—";
+      nextHint.textContent = open.length ? "Sem data marcada" : "Nada a pagar";
+    } else {
+      const info = dueMeta(next.due_date);
+      nextEl.textContent = formatDate(String(next.due_date).slice(0, 10)).slice(0, 5);
+      nextHint.textContent = info ? `${next.name} · ${info.text}` : next.name;
+    }
+  }
+  if (badge) {
+    badge.hidden = open.length === 0;
+    badge.textContent = open.length > 9 ? "9+" : String(open.length);
+  }
+  if (count) count.textContent = open.length === 1 ? "1 em aberto" : `${open.length} em aberto`;
+  const list = document.getElementById("debt-list");
+  const paidList = document.getElementById("debt-paid-list");
+  if (list) {
+    list.replaceChildren();
+    open.forEach((debt) => list.appendChild(debtCard(debt, false)));
+  }
+  if (paidCard) paidCard.hidden = paid.length === 0;
+  if (paidList) {
+    paidList.replaceChildren();
+    paid.forEach((debt) => paidList.appendChild(debtCard(debt, true)));
+  }
+  if (empty) empty.hidden = open.length > 0;
+}
+
+async function loadDebts() {
+  try {
+    debts = await api("GET", "/debts");
+  } catch (err) {
+    debts = [];
+    toast(err.message, "error");
+  }
+  renderDebts();
+}
+
+function debtPayloadFrom(debt, paid) {
+  return {
+    name: debt.name,
+    kind: debt.kind,
+    amount: Number(debt.amount),
+    due_date: debt.due_date ? String(debt.due_date).slice(0, 10) : "",
+    notes: debt.notes || "",
+    paid,
+  };
+}
+
+async function setDebtPaid(debt, paid) {
+  try {
+    await api("PUT", `/debts/${debt.id}`, debtPayloadFrom(debt, paid));
+    await loadDebts();
+    toast(paid ? "Dívida marcada como paga" : "Dívida reaberta");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function removeDebt(debt) {
+  try {
+    await api("DELETE", `/debts/${debt.id}`);
+    if (editingDebtId === debt.id) resetDebtForm();
+    await loadDebts();
+    toast(`"${debt.name}" excluída`, "info", {
+      label: "Desfazer",
+      run: async () => {
+        try {
+          await api("POST", "/debts", debtPayloadFrom(debt, Boolean(debt.paid_at)));
+          await loadDebts();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      },
+    });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function startEditDebt(debt) {
+  editingDebtId = debt.id;
+  debtName.value = debt.name;
+  debtAmount.value = Number(debt.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  debtDue.value = debt.due_date ? String(debt.due_date).slice(0, 10) : "";
+  debtNotes.value = debt.notes || "";
+  setDebtKind(DEBT_KINDS[debt.kind] ? debt.kind : "other");
+  debtSubmit.textContent = "Salvar";
+  debtCancel.classList.remove("hidden");
+  debtForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  debtName.focus();
+}
+
+function bindDebts() {
+  document.querySelectorAll("#debt-form [data-kind]").forEach((btn) => {
+    btn.addEventListener("click", () => setDebtKind(btn.dataset.kind));
+  });
+  debtCancel?.addEventListener("click", resetDebtForm);
+  debtForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = debtName.value.trim();
+    const amount = parseAmount(debtAmount.value);
+    if (!name) return toast("Informe o nome da dívida", "error");
+    if (Number.isNaN(amount)) {
+      debtAmount.focus();
+      return toast("Valor inválido. Use por exemplo 49,90", "error");
+    }
+    const current = debts.find((d) => d.id === editingDebtId);
+    const body = {
+      name,
+      amount,
+      due_date: debtDue.value,
+      kind: debtKind.value || "credit_card",
+      notes: debtNotes.value.trim(),
+      paid: Boolean(current?.paid_at),
+    };
+    debtSubmit.disabled = true;
+    try {
+      if (editingDebtId) {
+        await api("PUT", `/debts/${editingDebtId}`, body);
+        toast("Dívida atualizada");
+      } else {
+        await api("POST", "/debts", body);
+        toast("Dívida adicionada");
+      }
+      resetDebtForm();
+      await loadDebts();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      debtSubmit.disabled = false;
+    }
+  });
+}
+
 (async function init() {
   enhanceControls();
+  buildChartPrefs();
+  applyChartPrefs();
+  bindNavigation();
+  bindDebts();
+  const start = viewFromHash();
+  if (start !== "home") showView(start, false);
   if (previewMode) allTransactions = demoTransactions();
-  renderDashboard();
+  if (!document.getElementById("view-home")?.hidden) renderDashboard();
   await loadCategories();
-  await loadTransactions();
+  await loadSettings();
+  await Promise.all([loadTransactions(), loadDebts()]);
 })();
 
 /* ---------- controles customizados ---------- */

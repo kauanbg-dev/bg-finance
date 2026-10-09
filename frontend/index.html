@@ -72,6 +72,7 @@
       </div>
     </div>
 
+    <section id="view-home" class="app-view">
     <div class="cards">
       <div class="card income">
         <div class="card-top">
@@ -147,6 +148,22 @@
       <button class="btn primary" type="submit" id="submit-btn">Adicionar</button>
     </form>
 
+    <div class="sheet-card import-card">
+      <div class="chart-header">
+        <h2>Importar extrato</h2>
+        <p class="muted">CSV ou OFX de qualquer banco. O arquivo fica só neste aparelho e a senha do banco não entra aqui.</p>
+      </div>
+      <div class="segmented" id="import-source" role="group" aria-label="Origem do arquivo">
+        <button type="button" class="seg-btn active" data-source="account">Conta</button>
+        <button type="button" class="seg-btn" data-source="card">Fatura do cartão</button>
+      </div>
+      <p class="muted import-hint" id="import-hint">Extrato da conta. Valor positivo vira receita e negativo vira despesa.</p>
+      <label class="btn secondary import-file">
+        <input id="statement-file" type="file" accept=".csv,.ofx,.qfx,text/csv,application/x-ofx">
+        <span>Escolher arquivo</span>
+      </label>
+    </div>
+
     <div class="filter-row">
       <div class="field field-month">
         <label>Mês</label>
@@ -216,8 +233,9 @@
       <button type="button" class="btn secondary show-more hidden" id="show-more">Mostrar mais</button>
     </div>
 
+    <p id="charts-off" class="empty-note" hidden>Os gráficos estão desligados. Você liga de novo em Ajustes.</p>
     <div class="charts-grid">
-      <div class="chart-card">
+      <div class="chart-card" data-chart="flow">
         <div class="chart-header">
           <h2>Fluxo mensal</h2>
           <p class="muted">Barras de receita/despesa e linha de saldo acumulado</p>
@@ -227,7 +245,7 @@
         </div>
       </div>
 
-      <div class="chart-card">
+      <div class="chart-card" data-chart="category">
         <div class="chart-header">
           <h2>Por categoria</h2>
           <p class="muted">Quanto cada grupo pesa no período filtrado</p>
@@ -237,7 +255,7 @@
         </div>
       </div>
 
-      <div class="chart-card">
+      <div class="chart-card" data-chart="mix">
         <div class="chart-header">
           <h2>Composição</h2>
           <select id="chart-mode">
@@ -250,7 +268,7 @@
         </div>
       </div>
 
-      <div class="chart-card">
+      <div class="chart-card" data-chart="daily">
         <div class="chart-header">
           <h2>Evolução diária</h2>
           <p class="muted">Entradas, saídas e saldo do dia</p>
@@ -280,7 +298,111 @@
         kauanbg-dev
       </a>
     </footer>
+    </section>
+
+    <section id="view-debts" class="app-view" hidden>
+      <header class="view-head">
+        <h2>Dívidas</h2>
+        <p class="muted">Cartão, empréstimo ou qualquer valor que ainda falta pagar.</p>
+      </header>
+
+      <div class="cards debt-summary">
+        <div class="card expense">
+          <div class="card-top">
+            <h3>Em aberto</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>
+          </div>
+          <p id="debt-open">R$ 0,00</p>
+          <span class="card-hint" id="debt-open-hint">Nenhuma dívida</span>
+        </div>
+        <div class="card">
+          <div class="card-top">
+            <h3>Próximo vencimento</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+          </div>
+          <p id="debt-next">—</p>
+          <span class="card-hint" id="debt-next-hint">Sem data marcada</span>
+        </div>
+      </div>
+
+      <form id="debt-form" class="debt-form">
+        <div class="field f-name">
+          <label for="debt-name">Nome</label>
+          <input type="text" id="debt-name" placeholder="Ex: cartão, empréstimo do banco…" maxlength="120" autocomplete="off" required>
+        </div>
+        <div class="field f-amount">
+          <label for="debt-amount">Valor a pagar</label>
+          <input type="text" id="debt-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+        </div>
+        <div class="field f-due">
+          <label for="debt-due">Vencimento</label>
+          <input type="date" id="debt-due">
+        </div>
+        <div class="field f-kind">
+          <label>Tipo</label>
+          <input type="hidden" id="debt-kind" value="credit_card">
+          <div class="segmented" role="group" aria-label="Tipo de dívida">
+            <button type="button" class="seg-btn active" data-kind="credit_card">Cartão</button>
+            <button type="button" class="seg-btn" data-kind="loan">Empréstimo</button>
+            <button type="button" class="seg-btn" data-kind="other">Outro</button>
+          </div>
+        </div>
+        <div class="field f-notes">
+          <label for="debt-notes">Observação</label>
+          <input type="text" id="debt-notes" maxlength="240" placeholder="Fatura de outubro, parcela 3 de 12…" autocomplete="off">
+        </div>
+        <div class="debt-form-actions">
+          <button type="button" class="btn secondary hidden" id="debt-cancel">Cancelar</button>
+          <button class="btn primary" type="submit" id="debt-submit">Adicionar dívida</button>
+        </div>
+      </form>
+
+      <div class="sheet-card">
+        <div class="chart-header">
+          <h2>A pagar</h2>
+          <span class="muted" id="debt-count">0 em aberto</span>
+        </div>
+        <div id="debt-list" class="debt-list"></div>
+        <p id="debt-empty" class="empty-note">Nenhuma dívida em aberto. Quando surgir uma fatura ou parcela, registre aqui.</p>
+      </div>
+
+      <div class="sheet-card" id="debt-paid-card" hidden>
+        <div class="chart-header">
+          <h2>Pagas</h2>
+        </div>
+        <div id="debt-paid-list" class="debt-list"></div>
+      </div>
+    </section>
+
+    <section id="view-settings" class="app-view" hidden>
+      <header class="view-head">
+        <h2>Ajustes</h2>
+        <p class="muted">Escolha o que fica visível no painel. Dá para ligar de novo quando quiser.</p>
+      </header>
+      <div class="sheet-card">
+        <div class="chart-header">
+          <h2>Gráficos</h2>
+        </div>
+        <div class="pref-list" id="chart-prefs"></div>
+      </div>
+    </section>
   </div>
+
+  <nav class="tabbar" aria-label="Menu">
+    <button type="button" class="nav-btn is-active" data-view="home" aria-current="page">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></svg>
+      <span>Painel</span>
+    </button>
+    <button type="button" class="nav-btn" data-view="debts">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+      <span>Dívidas</span>
+      <span class="nav-badge" id="debt-badge" hidden>0</span>
+    </button>
+    <button type="button" class="nav-btn" data-view="settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="17" r="2" fill="currentColor" stroke="none"/></svg>
+      <span>Ajustes</span>
+    </button>
+  </nav>
 
   <!-- MODAL EDITAR TRANSAÇÃO -->
   <div id="edit-modal" class="modal hidden">

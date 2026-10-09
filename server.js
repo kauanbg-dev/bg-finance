@@ -13,7 +13,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
-app.use(express.json({ limit: '200kb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'frontend')));
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -525,6 +525,272 @@ app.put('/transactions/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Erro ao editar transacao:', err);
     return res.status(500).json({ error: 'Erro ao editar transacao' });
+  }
+});
+
+function mapBankCategory(raw, type) {
+  const text = String(raw || '').toLowerCase();
+  if (/mercado|supermerc|aliment|restaurante|ifood|padaria|bar/.test(text)) return 'Alimentacao';
+  if (/transporte|uber|combust|posto/.test(text)) return 'Transporte';
+  if (/assinatura|streaming|spotify|netflix/.test(text)) return 'Assinaturas';
+  if (/moradia|casa|aluguel|condomin/.test(text)) return 'Moradia';
+  if (/saude|saúde|farmac|drogaria/.test(text)) return 'Saude';
+  if (/lazer|entreten/.test(text)) return 'Lazer';
+  if (/educa|curso|escola/.test(text)) return 'Educacao';
+  if (/trabalho/.test(text)) return 'Trabalho';
+  if (type === 'income' && /salario|salário|holerite/.test(text)) return 'Salario';
+  if (type === 'income' && /invest|rendimento|dividendo/.test(text)) return 'Investimentos';
+  return 'Outros';
+}
+
+app.post('/imports/statement', authenticateToken, async (req, res) => {
+  const source = req.body?.source === 'card' ? 'card' : req.body?.source === 'account' ? 'account' : '';
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 800) : [];
+  if (!source || !rows.length) return res.status(400).json({ error: 'Arquivo sem lancamentos' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    let added = 0;
+    let skipped = 0;
+    const invoiceTotals = new Map();
+
+    for (const row of rows) {
+      const description = String(row.description || '').trim().slice(0, 120);
+      const signed = Number(row.amount);
+      const day = String(row.date || '').slice(0, 10);
+      const date = parseDate(day);
+      if (!description || !date || !Number.isFinite(signed) || signed === 0) {
+        skipped += 1;
+        continue;
+      }
+
+      const type = source === 'card'
+        ? (signed < 0 ? 'income' : 'expense')
+        : (signed < 0 ? 'expense' : 'income');
+      const amount = Math.round(Math.abs(signed) * 100) / 100;
+      if (!validTransaction(description, amount, type)) {
+        skipped += 1;
+        continue;
+      }
+
+      const duplicate = await client.query(
+        `SELECT 1
+         FROM transactions
+         WHERE user_id = $1
+           AND description = $2
+           AND amount = $3
+           AND type = $4
+           AND TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') = $5
+         LIMIT 1`,
+        [req.user.id, description, amount, type, day]
+      );
+      if (duplicate.rows[0]) {
+        skipped += 1;
+        continue;
+      }
+
+      const category = mapBankCategory(`${row.category || ''} ${description}`, type);
+      const categoryId = await resolveCategoryId(req.user.id, type, { category });
+      await client.query(
+        `INSERT INTO transactions (description, amount, type, user_id, category_id, date)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [description, amount, type, req.user.id, categoryId, date]
+      );
+      added += 1;
+      if (source === 'card' && type === 'expense') {
+        const month = day.slice(0, 7);
+        invoiceTotals.set(month, (invoiceTotals.get(month) || 0) + amount);
+      }
+    }
+
+    let debts = 0;
+    for (const [month, total] of invoiceTotals) {
+      const [year, mon] = month.split('-');
+      const name = `Fatura do cartão ${mon}/${year}`;
+      const rounded = Math.round(total * 100) / 100;
+      const existing = await client.query(
+        `SELECT id FROM debts WHERE user_id = $1 AND name = $2 AND paid_at IS NULL LIMIT 1`,
+        [req.user.id, name]
+      );
+      if (existing.rows[0]) {
+        await client.query(
+          `UPDATE debts SET amount = $1, kind = 'credit_card', notes = $2 WHERE id = $3`,
+          [rounded, 'Importada da fatura', existing.rows[0].id]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO debts (user_id, name, kind, amount, notes)
+           VALUES ($1, $2, 'credit_card', $3, $4)`,
+          [req.user.id, name, rounded, 'Importada da fatura']
+        );
+      }
+      debts += 1;
+    }
+
+    await client.query('COMMIT');
+    return res.json({ added, skipped, debts });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao importar extrato:', err);
+    return res.status(500).json({ error: 'Erro ao importar arquivo' });
+  } finally {
+    client.release();
+  }
+});
+
+const CHART_KEYS = ['flow', 'category', 'mix', 'daily'];
+const DEBT_KINDS = ['credit_card', 'loan', 'other'];
+
+function chartSettings(raw) {
+  const src = raw && typeof raw.charts === 'object' && raw.charts ? raw.charts : {};
+  const charts = {};
+  for (const key of CHART_KEYS) charts[key] = src[key] !== false;
+  return { charts };
+}
+
+app.get('/settings', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
+    return res.json(chartSettings(result.rows[0].settings));
+  } catch (err) {
+    console.error('Erro ao buscar ajustes:', err);
+    return res.status(500).json({ error: 'Erro ao buscar ajustes' });
+  }
+});
+
+app.put('/settings', authenticateToken, async (req, res) => {
+  const incoming = req.body && req.body.charts;
+  if (!incoming || typeof incoming !== 'object') {
+    return res.status(400).json({ error: 'Dados invalidos' });
+  }
+
+  try {
+    const current = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
+    if (!current.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
+
+    const next = chartSettings(current.rows[0].settings).charts;
+    for (const key of CHART_KEYS) {
+      if (typeof incoming[key] === 'boolean') next[key] = incoming[key];
+    }
+
+    const saved = await db.query(
+      `UPDATE users SET settings = $1::jsonb WHERE id = $2 RETURNING settings`,
+      [JSON.stringify({ charts: next }), req.user.id]
+    );
+    return res.json(chartSettings(saved.rows[0].settings));
+  } catch (err) {
+    console.error('Erro ao salvar ajustes:', err);
+    return res.status(500).json({ error: 'Erro ao salvar ajustes' });
+  }
+});
+
+function debtPayload(body) {
+  const name = String(body.name || '').trim();
+  const kind = String(body.kind || '').trim();
+  const amount = Number(body.amount);
+  const notes = String(body.notes || '').trim();
+  const dueRaw = String(body.due_date || '').trim();
+  const due = dueRaw ? parseDate(dueRaw) : null;
+
+  if (
+    !name ||
+    name.length > 120 ||
+    !DEBT_KINDS.includes(kind) ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    amount >= 1e10 ||
+    notes.length > 240 ||
+    (dueRaw && !due)
+  ) {
+    return null;
+  }
+
+  return {
+    name,
+    kind,
+    amount,
+    notes: notes || null,
+    dueDate: due,
+    paid: body.paid === true,
+  };
+}
+
+app.get('/debts', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, name, kind, amount, due_date::text AS due_date, notes, paid_at, created_at
+       FROM debts
+       WHERE user_id = $1
+       ORDER BY (paid_at IS NULL) DESC, due_date NULLS LAST, id DESC`,
+      [req.user.id]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao listar dividas:', err);
+    return res.status(500).json({ error: 'Erro ao listar dividas' });
+  }
+});
+
+app.post('/debts', authenticateToken, async (req, res) => {
+  const debt = debtPayload(req.body || {});
+  if (!debt) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `INSERT INTO debts (user_id, name, kind, amount, due_date, notes, paid_at)
+       VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7 THEN NOW() ELSE NULL END)
+       RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, created_at`,
+      [req.user.id, debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao criar divida:', err);
+    return res.status(500).json({ error: 'Erro ao criar divida' });
+  }
+});
+
+app.put('/debts/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const debt = debtPayload(req.body || {});
+  if (!id || !debt) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `UPDATE debts
+       SET name = $1,
+           kind = $2,
+           amount = $3,
+           due_date = $4,
+           notes = $5,
+           paid_at = CASE
+             WHEN $6 THEN COALESCE(paid_at, NOW())
+             ELSE NULL
+           END
+       WHERE id = $7 AND user_id = $8
+       RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, created_at`,
+      [debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid, id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Divida nao encontrada' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao editar divida:', err);
+    return res.status(500).json({ error: 'Erro ao editar divida' });
+  }
+});
+
+app.delete('/debts/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query('DELETE FROM debts WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Divida nao encontrada' });
+    return res.json({ deleted: result.rowCount });
+  } catch (err) {
+    console.error('Erro ao excluir divida:', err);
+    return res.status(500).json({ error: 'Erro ao excluir divida' });
   }
 });
 
