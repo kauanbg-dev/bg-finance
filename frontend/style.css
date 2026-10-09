@@ -20,6 +20,8 @@
   --money-in-soft:#a7f3d0;
   --money-out:#fca5a5;
   --money-out-soft:#fecaca;
+  --edge: max(24px, env(safe-area-inset-left));
+  --edge-right: max(24px, env(safe-area-inset-right));
 }
 
 html[data-theme="light"]{
@@ -46,8 +48,16 @@ html[data-theme="light"]{
 body{
   min-height: 100vh;
   padding-bottom: env(safe-area-inset-bottom);
-  background: radial-gradient(1200px 600px at 20% 0%, var(--bg-glow) 0%, var(--bg1) 55%, var(--bg-deep) 100%);
+  background: var(--bg1);
   color: var(--text);
+}
+body::before{
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(1200px 600px at 20% 0%, var(--bg-glow) 0%, var(--bg1) 55%, var(--bg-deep) 100%);
 }
 
 /* AUTH PAGES */
@@ -512,7 +522,7 @@ input[type="number"]{
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 14px 12px 8px;
+  padding: 14px var(--edge-right) 8px var(--edge);
   box-shadow: none;
 }
 
@@ -1273,8 +1283,8 @@ li button{
 
 .toasts{
   position: fixed;
-  left: 12px;
-  right: 12px;
+  left: var(--edge);
+  right: var(--edge-right);
   bottom: calc(84px + env(safe-area-inset-bottom));
   z-index: 10000;
   display: flex;
@@ -1876,8 +1886,8 @@ html[data-theme="light"] .toast{
 .tabbar{
   position: fixed;
   z-index: 40;
-  left: 12px;
-  right: 12px;
+  left: var(--edge);
+  right: var(--edge-right);
   bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-shift, 0px));
   display: grid;
   grid-template-columns: repeat(3, 1fr);

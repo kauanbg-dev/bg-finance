@@ -161,6 +161,7 @@ function readStoredCharts() {
 
 let chartPrefs = readStoredCharts();
 let charts = {};
+let chartsNeedDraw = true;
 let loading = true;
 let categoryTouched = false;
 
@@ -1123,6 +1124,8 @@ function chartDefaults() {
   Chart.defaults.color = light ? "#475569" : "#cbd5e1";
   Chart.defaults.borderColor = light ? "rgba(15,23,42,.08)" : "rgba(255,255,255,.06)";
   Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+  Chart.defaults.animation = false;
+  Chart.defaults.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
   Chart.defaults.plugins.legend.display = false;
   Chart.defaults.plugins.tooltip.backgroundColor = "#0f172a";
   Chart.defaults.plugins.tooltip.titleColor = "#f8fafc";
@@ -1153,7 +1156,11 @@ function markEmpty(canvasId, empty) {
 }
 
 function updateCharts(rows, income, expense) {
-  if (document.getElementById("view-home")?.hidden) return;
+  if (document.getElementById("view-home")?.hidden) {
+    chartsNeedDraw = true;
+    return;
+  }
+  chartsNeedDraw = false;
   if (typeof Chart === "undefined") return;
   chartDefaults();
   const byMonth = new Map();
@@ -1474,6 +1481,14 @@ async function loadTransactions() {
   renderDashboard();
 }
 
+function debounce(fn, ms) {
+  let timer = 0;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
 function applyFilters() {
   visibleCount = PAGE_SIZE;
   renderDashboard();
@@ -1482,7 +1497,7 @@ function applyFilters() {
 monthFilter?.addEventListener("change", applyFilters);
 typeFilter?.addEventListener("change", applyFilters);
 categoryFilter?.addEventListener("change", applyFilters);
-searchFilter?.addEventListener("input", applyFilters);
+searchFilter?.addEventListener("input", debounce(applyFilters, 200));
 chartMode?.addEventListener("change", renderDashboard);
 
 function stepMonth(delta) {
@@ -1707,16 +1722,25 @@ function showView(name, scroll = true) {
   });
   const nextHash = name === "home" ? "" : `#${name}`;
   if (location.hash !== nextHash) history.replaceState(null, "", location.pathname + location.search + nextHash);
-  if (name === "home") renderDashboard();
+  if (name === "home" && chartsNeedDraw) renderDashboard();
+  else if (name === "home") requestAnimationFrame(() => Object.values(charts).forEach((chart) => chart?.resize()));
   if (scroll) window.scrollTo(0, 0);
 }
 
+let pinFrame = 0;
+let pinShift = "";
 function pinTabbar() {
-  const bar = document.querySelector(".tabbar");
-  const vv = window.visualViewport;
-  if (!bar || !vv) return;
-  const hiddenBelow = Math.max(0, window.innerHeight - (vv.offsetTop + vv.height));
-  bar.style.setProperty("--vv-shift", `${Math.round(hiddenBelow)}px`);
+  if (pinFrame) return;
+  pinFrame = requestAnimationFrame(() => {
+    pinFrame = 0;
+    const bar = document.querySelector(".tabbar");
+    const vv = window.visualViewport;
+    if (!bar || !vv) return;
+    const next = `${Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height)))}px`;
+    if (next === pinShift) return;
+    pinShift = next;
+    bar.style.setProperty("--vv-shift", next);
+  });
 }
 
 function bindNavigation() {
@@ -1725,9 +1749,9 @@ function bindNavigation() {
   });
   window.addEventListener("hashchange", () => showView(viewFromHash(), false));
   pinTabbar();
-  window.visualViewport?.addEventListener("resize", pinTabbar);
-  window.visualViewport?.addEventListener("scroll", pinTabbar);
-  window.addEventListener("resize", pinTabbar);
+  window.visualViewport?.addEventListener("resize", pinTabbar, { passive: true });
+  window.visualViewport?.addEventListener("scroll", pinTabbar, { passive: true });
+  window.addEventListener("resize", pinTabbar, { passive: true });
 }
 
 function applyChartPrefs() {
@@ -1740,6 +1764,7 @@ function applyChartPrefs() {
   const note = document.getElementById("charts-off");
   if (grid) grid.hidden = !anyOn;
   if (note) note.hidden = anyOn;
+  if (document.getElementById("view-home")?.hidden) chartsNeedDraw = true;
   document.querySelectorAll("[data-chart-toggle]").forEach((input) => {
     input.checked = chartPrefs[input.dataset.chartToggle] !== false;
   });
