@@ -1843,9 +1843,9 @@ function isSavedMoney(name) {
 
 function askMirrorSaved(description, amount, toSaved) {
   return askDialog({
-    title: toSaved ? "Colocar em Guardado?" : "Lançar como despesa?",
+    title: toSaved ? "Colocar em Investimentos?" : "Lançar como despesa?",
     text: toSaved
-      ? `Adicionar ${money(amount)} de ${description} na aba Guardado?`
+      ? `Adicionar ${money(amount)} de ${description} na aba Investimentos?`
       : `Lançar ${money(amount)} de ${description} como despesa em Dinheiro guardado?`,
     okLabel: toSaved ? "Sim, guardar" : "Sim, lançar",
     cancelLabel: "Não",
