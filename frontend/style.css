@@ -1819,6 +1819,35 @@ html[data-theme="light"] .toast{
   line-height: 1.45;
 }
 
+.tg-commands{
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.tg-commands code{
+  color: var(--text-strong);
+  font-weight: 700;
+}
+.tg-code{
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  text-align: center;
+  background: rgba(var(--wash), .05);
+  border: 1px dashed rgba(var(--wash), .2);
+}
+.tg-code strong{
+  display: block;
+  margin: 6px 0;
+  font-size: 28px;
+  letter-spacing: .16em;
+  color: var(--text-strong);
+}
+.tg-code p{ margin-top: 4px; }
+
 .pref-list{ display: grid; gap: 8px; }
 .pref-row{
   display: flex;
