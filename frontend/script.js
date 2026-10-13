@@ -272,6 +272,7 @@ let previewProfile = {
 };
 
 let previewSettings = { charts: { flow: true, category: true, mix: true, daily: true } };
+let previewTelegram = { linked: false };
 let previewDebts = [];
 
 function seedPreviewDebts() {
@@ -291,6 +292,16 @@ function shiftDay(iso, delta) {
 }
 
 function previewApi(method, url, body) {
+  if (url === "/telegram") {
+    if (method === "DELETE") {
+      previewTelegram.linked = false;
+      return { linked: false };
+    }
+    return { configured: true, username: "bgfinance_bot", linked: previewTelegram.linked };
+  }
+  if (url === "/telegram/link" && method === "POST") {
+    return { code: "DEMO42", username: "bgfinance_bot", expires_in: 900 };
+  }
   if (url === "/me") {
     if (method === "DELETE") return { deleted: true };
     if (method === "PUT") previewProfile = { ...previewProfile, avatar: body?.avatar || null };
@@ -1724,6 +1735,7 @@ function showView(name, scroll = true) {
   if (location.hash !== nextHash) history.replaceState(null, "", location.pathname + location.search + nextHash);
   if (name === "home" && chartsNeedDraw) renderDashboard();
   else if (name === "home") requestAnimationFrame(() => Object.values(charts).forEach((chart) => chart?.resize()));
+  if (name === "settings") loadTelegram();
   if (scroll) window.scrollTo(0, 0);
 }
 
@@ -2081,12 +2093,76 @@ function bindDebts() {
   });
 }
 
+let telegramState = { configured: false, linked: false, username: "" };
+
+function paintTelegram() {
+  const status = document.getElementById("telegram-status");
+  const link = document.getElementById("telegram-link");
+  const unlink = document.getElementById("telegram-unlink");
+  if (!status || !link || !unlink) return;
+  if (!telegramState.configured) {
+    status.textContent = "O bot ainda não está ativo neste servidor.";
+    link.hidden = true;
+    unlink.hidden = true;
+    return;
+  }
+  const bot = telegramState.username ? `@${telegramState.username}` : "o bot";
+  status.textContent = telegramState.linked
+    ? `Conta ligada a ${bot}. Dá para lançar gasto e ver o saldo por lá.`
+    : `Gere um código e envie para ${bot} com /vincular.`;
+  link.hidden = false;
+  unlink.hidden = !telegramState.linked;
+}
+
+async function loadTelegram() {
+  const status = document.getElementById("telegram-status");
+  if (!status) return;
+  try {
+    telegramState = await api("GET", "/telegram");
+    paintTelegram();
+  } catch (err) {
+    status.textContent = err.message;
+  }
+}
+
+function bindTelegram() {
+  document.getElementById("telegram-link")?.addEventListener("click", async () => {
+    const button = document.getElementById("telegram-link");
+    button.disabled = true;
+    try {
+      const data = await api("POST", "/telegram/link");
+      const box = document.getElementById("telegram-code");
+      document.getElementById("telegram-code-value").textContent = data.code;
+      const bot = data.username ? `@${data.username}` : "o bot";
+      document.getElementById("telegram-code-hint").textContent = `No Telegram, abra ${bot} e envie /vincular ${data.code}. Vale por 15 minutos.`;
+      box.hidden = false;
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("telegram-unlink")?.addEventListener("click", async () => {
+    try {
+      await api("DELETE", "/telegram");
+      telegramState = { ...telegramState, linked: false };
+      document.getElementById("telegram-code").hidden = true;
+      paintTelegram();
+      toast("Telegram desvinculado");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
+}
+
 (async function init() {
   enhanceControls();
   buildChartPrefs();
   applyChartPrefs();
   bindNavigation();
   bindDebts();
+  bindTelegram();
   const start = viewFromHash();
   if (start !== "home") showView(start, false);
   if (previewMode) allTransactions = demoTransactions();

@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 
 const db = require('./database');
+const telegram = require('./telegram');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -813,6 +814,8 @@ app.delete('/debts/:id', authenticateToken, async (req, res) => {
   }
 });
 
+telegram.setup(app, authenticateToken);
+
 app.delete('/transactions/:id', authenticateToken, async (req, res) => {
   const id = Number(req.params.id);
 
@@ -840,6 +843,7 @@ app.delete('/transactions/:id', authenticateToken, async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 db.initDatabase()
+  .then(() => telegram.start())
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);

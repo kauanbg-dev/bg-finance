@@ -386,6 +386,27 @@
         </div>
         <div class="pref-list" id="chart-prefs"></div>
       </div>
+      <div class="sheet-card" id="telegram-card">
+        <div class="chart-header">
+          <h2>Telegram</h2>
+          <p class="muted" id="telegram-status">Carregando…</p>
+        </div>
+        <ul class="tg-commands">
+          <li><code>/saldo</code> receitas, despesas e saldo do mês</li>
+          <li><code>/dividas</code> o que ainda está em aberto</li>
+          <li><code>/gasto 49,90 mercado</code> lança uma despesa</li>
+          <li><code>/receita 1500 salario</code> lança uma receita</li>
+        </ul>
+        <div id="telegram-code" class="tg-code" hidden>
+          <span>Mande este código para o bot</span>
+          <strong id="telegram-code-value"></strong>
+          <p class="muted" id="telegram-code-hint"></p>
+        </div>
+        <div class="debt-form-actions">
+          <button type="button" class="btn primary" id="telegram-link">Gerar código</button>
+          <button type="button" class="btn secondary" id="telegram-unlink" hidden>Desvincular</button>
+        </div>
+      </div>
     </section>
   </div>
 
