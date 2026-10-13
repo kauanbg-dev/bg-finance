@@ -210,7 +210,7 @@ const dialogOk = document.getElementById("dialog-ok");
 const dialogCancel = document.getElementById("dialog-cancel");
 let closeActiveDialog = null;
 
-function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", input = false, inputType = "text", danger = false }) {
+function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", cancelLabel = "Cancelar", input = false, inputType = "text", danger = false }) {
   return new Promise((resolve) => {
     dialogTitle.textContent = title;
     dialogText.textContent = text;
@@ -220,6 +220,7 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
     dialogInput.value = "";
     dialogInput.placeholder = placeholder;
     dialogOk.textContent = okLabel;
+    dialogCancel.textContent = cancelLabel;
     dialogOk.classList.toggle("danger", danger);
     dialog.classList.remove("hidden");
     (input ? dialogInput : dialogOk).focus();
@@ -229,9 +230,10 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
       dialog.classList.add("hidden");
       dialogInput.type = "text";
       dialogOk.classList.remove("danger");
+      dialogCancel.textContent = "Cancelar";
       dialogForm.removeEventListener("submit", onSubmit);
       dialogCancel.removeEventListener("click", onCancel);
-      backdrop.removeEventListener("click", onCancel);
+      backdrop.removeEventListener("click", onDismiss);
       closeActiveDialog = null;
       resolve(value);
     };
@@ -239,11 +241,12 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
       e.preventDefault();
       finish(input ? dialogInput.value.trim() : true);
     };
-    const onCancel = () => finish(null);
+    const onCancel = () => finish(false);
+    const onDismiss = () => finish(null);
     dialogForm.addEventListener("submit", onSubmit);
     dialogCancel.addEventListener("click", onCancel);
-    backdrop.addEventListener("click", onCancel);
-    closeActiveDialog = onCancel;
+    backdrop.addEventListener("click", onDismiss);
+    closeActiveDialog = onDismiss;
   });
 }
 
@@ -279,9 +282,12 @@ function seedPreviewDebts() {
   if (previewDebts.length) return;
   const soon = shiftDay(today(), 3);
   const late = shiftDay(today(), -4);
+  const next = `${shiftMonth(today().slice(0, 7), 1)}-12`;
   previewDebts = [
     { id: ++previewSeq, name: "Cartão de crédito", kind: "credit_card", amount: 842.3, due_date: soon, notes: "Fatura do mês", paid_at: null },
     { id: ++previewSeq, name: "Empréstimo pessoal", kind: "loan", amount: 3200, due_date: late, notes: "Parcela 4 de 12", paid_at: null },
+    { id: ++previewSeq, name: "Fatura do cartão", kind: "credit_card", amount: 960, due_date: next, notes: "Fecha no mês que vem", paid_at: null },
+    { id: ++previewSeq, name: "Parcela antiga", kind: "loan", amount: 400, due_date: shiftDay(today(), -40), notes: "", paid_at: new Date().toISOString() },
   ];
 }
 
@@ -1849,10 +1855,19 @@ function setDebtKind(kind) {
   });
 }
 
+function setDebtPaidFlag(paid) {
+  const input = document.getElementById("debt-paid");
+  if (input) input.value = paid ? "1" : "0";
+  document.querySelectorAll("#debt-form [data-paid]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.paid === (paid ? "1" : "0"));
+  });
+}
+
 function resetDebtForm() {
   editingDebtId = null;
   debtForm?.reset();
   setDebtKind("credit_card");
+  setDebtPaidFlag(false);
   if (debtSubmit) debtSubmit.textContent = "Adicionar dívida";
   debtCancel?.classList.add("hidden");
 }
@@ -1881,10 +1896,42 @@ function debtAction(icon, label, onClick, extra = "") {
   return btn;
 }
 
-function debtCard(debt, paid) {
+const MONTHS_FULL = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+function debtDay(debt) {
+  return debt.due_date ? String(debt.due_date).slice(0, 10) : "";
+}
+
+function debtBucket(debt) {
+  if (debt.paid_at) return "paid";
+  const day = debtDay(debt);
+  if (!day) return "later";
+  const now = today();
+  if (day < now) return "late";
+  const diff = Math.round((new Date(`${day}T12:00:00`) - new Date(`${now}T12:00:00`)) / 86400000);
+  const thisMonth = now.slice(0, 7);
+  if (day.slice(0, 7) === thisMonth || diff <= 7) return "soon";
+  if (day.slice(0, 7) === shiftMonth(thisMonth, 1)) return "next";
+  return "later";
+}
+
+function debtStatus(debt, bucket) {
+  if (bucket === "paid") return { text: "Paga", tone: "good" };
+  const info = dueMeta(debt.due_date);
+  if (bucket === "late") return info || { text: "Atrasada", tone: "bad" };
+  if (bucket === "soon") return info || { text: "Neste mês", tone: "warn" };
+  if (bucket === "next") {
+    const month = MONTHS_FULL[Number(debtDay(debt).slice(5, 7)) - 1];
+    return { text: month ? month[0].toUpperCase() + month.slice(1) : "Próximo mês", tone: "next" };
+  }
+  return { text: debt.due_date ? "Mais pra frente" : "Sem data", tone: "" };
+}
+
+function debtCard(debt, bucket) {
+  const paid = bucket === "paid";
   const article = document.createElement("article");
-  article.className = "debt-item" + (paid ? " is-paid" : "");
-  const info = paid ? null : dueMeta(debt.due_date);
+  article.className = `debt-item is-${bucket}`;
+  const info = debtStatus(debt, bucket);
 
   const top = document.createElement("div");
   top.className = "debt-top";
@@ -1895,7 +1942,7 @@ function debtCard(debt, paid) {
   const meta = document.createElement("p");
   meta.className = "debt-meta";
   const parts = [];
-  if (debt.due_date) parts.push(`${paid ? "Vencia " : ""}${formatDate(String(debt.due_date).slice(0, 10))}`);
+  if (debt.due_date) parts.push(formatDate(debtDay(debt)));
   if (debt.notes) parts.push(debt.notes);
   meta.textContent = parts.join(" · ") || (paid ? "Quitada" : "Sem vencimento");
   const tags = document.createElement("div");
@@ -1904,17 +1951,10 @@ function debtCard(debt, paid) {
   kind.className = "tag";
   kind.textContent = DEBT_KINDS[debt.kind] || "Outro";
   tags.appendChild(kind);
-  if (paid) {
-    const tag = document.createElement("span");
-    tag.className = "tag good";
-    tag.textContent = "Paga";
-    tags.appendChild(tag);
-  } else if (info) {
-    const tag = document.createElement("span");
-    tag.className = `tag ${info.tone}`;
-    tag.textContent = info.text;
-    tags.appendChild(tag);
-  }
+  const tag = document.createElement("span");
+  tag.className = `tag ${info.tone}`.trim();
+  tag.textContent = info.text;
+  tags.appendChild(tag);
   main.append(title, meta, tags);
   const amount = document.createElement("p");
   amount.className = "debt-amount";
@@ -1931,58 +1971,66 @@ function debtCard(debt, paid) {
     reopen.addEventListener("click", () => setDebtPaid(debt, false));
     actions.appendChild(reopen);
   } else {
-    actions.append(
-      debtAction(ICON.check, "Marcar como paga", () => setDebtPaid(debt, true)),
-      debtAction(ICON.edit, "Editar", () => startEditDebt(debt))
-    );
+    const pay = document.createElement("button");
+    pay.type = "button";
+    pay.className = "pay-btn";
+    pay.textContent = "Marcar como paga";
+    pay.addEventListener("click", () => setDebtPaid(debt, true));
+    actions.append(pay, debtAction(ICON.edit, "Editar", () => startEditDebt(debt)));
   }
   actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeDebt(debt), "delete"));
   article.append(top, actions);
   return article;
 }
 
+function sumDebts(items) {
+  return items.reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
+}
+
+function fillDebtGroup(id, items, bucket) {
+  const card = document.getElementById(id);
+  const list = card?.querySelector(".debt-list");
+  const sum = card?.querySelector("[data-sum]");
+  if (!card || !list) return;
+  const ordered = [...items].sort((a, b) => debtDay(a).localeCompare(debtDay(b)));
+  card.hidden = ordered.length === 0;
+  list.replaceChildren(...ordered.map((debt) => debtCard(debt, bucket)));
+  if (sum) sum.textContent = ordered.length ? money(sumDebts(ordered)) : "";
+}
+
 function renderDebts() {
-  const open = debts.filter((d) => !d.paid_at);
-  const paid = debts.filter((d) => d.paid_at);
-  const total = open.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const groups = { late: [], soon: [], next: [], later: [], paid: [] };
+  debts.forEach((debt) => groups[debtBucket(debt)].push(debt));
+  const open = debts.filter((debt) => !debt.paid_at);
   const openEl = document.getElementById("debt-open");
   const hint = document.getElementById("debt-open-hint");
-  const nextEl = document.getElementById("debt-next");
-  const nextHint = document.getElementById("debt-next-hint");
+  const lateEl = document.getElementById("debt-late");
+  const lateHint = document.getElementById("debt-late-hint");
+  const soonEl = document.getElementById("debt-soon");
+  const soonHint = document.getElementById("debt-soon-hint");
+  const monthEl = document.getElementById("debt-month");
+  const monthHint = document.getElementById("debt-month-hint");
   const badge = document.getElementById("debt-badge");
-  const count = document.getElementById("debt-count");
   const empty = document.getElementById("debt-empty");
-  const paidCard = document.getElementById("debt-paid-card");
-  if (openEl) openEl.textContent = money(total);
+  const nextName = MONTHS_FULL[Number(shiftMonth(today().slice(0, 7), 1).slice(5)) - 1];
+  if (openEl) openEl.textContent = money(sumDebts(open));
   if (hint) hint.textContent = open.length === 1 ? "1 dívida" : open.length ? `${open.length} dívidas` : "Nenhuma dívida";
-  const upcoming = open.filter((d) => d.due_date).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
-  const next = upcoming[0];
-  if (nextEl && nextHint) {
-    if (!next) {
-      nextEl.textContent = "—";
-      nextHint.textContent = open.length ? "Sem data marcada" : "Nada a pagar";
-    } else {
-      const info = dueMeta(next.due_date);
-      nextEl.textContent = formatDate(String(next.due_date).slice(0, 10)).slice(0, 5);
-      nextHint.textContent = info ? `${next.name} · ${info.text}` : next.name;
-    }
-  }
+  if (lateEl) lateEl.textContent = money(sumDebts(groups.late));
+  if (lateHint) lateHint.textContent = groups.late.length === 1 ? "1 atrasada" : groups.late.length ? `${groups.late.length} atrasadas` : "Nada atrasado";
+  if (soonEl) soonEl.textContent = money(sumDebts(groups.soon));
+  if (soonHint) soonHint.textContent = groups.soon.length === 1 ? "1 neste mês" : groups.soon.length ? `${groups.soon.length} neste mês` : "Nada neste mês";
+  if (monthEl) monthEl.textContent = money(sumDebts(groups.next));
+  if (monthHint) monthHint.textContent = groups.next.length ? nextName : "Nada no mês que vem";
+  const urgent = groups.late.length + groups.soon.length;
   if (badge) {
-    badge.hidden = open.length === 0;
-    badge.textContent = open.length > 9 ? "9+" : String(open.length);
+    badge.hidden = urgent === 0;
+    badge.textContent = urgent > 9 ? "9+" : String(urgent);
   }
-  if (count) count.textContent = open.length === 1 ? "1 em aberto" : `${open.length} em aberto`;
-  const list = document.getElementById("debt-list");
-  const paidList = document.getElementById("debt-paid-list");
-  if (list) {
-    list.replaceChildren();
-    open.forEach((debt) => list.appendChild(debtCard(debt, false)));
-  }
-  if (paidCard) paidCard.hidden = paid.length === 0;
-  if (paidList) {
-    paidList.replaceChildren();
-    paid.forEach((debt) => paidList.appendChild(debtCard(debt, true)));
-  }
+  fillDebtGroup("debt-late-card", groups.late, "late");
+  fillDebtGroup("debt-soon-card", groups.soon, "soon");
+  fillDebtGroup("debt-next-card", groups.next, "next");
+  fillDebtGroup("debt-later-card", groups.later, "later");
+  fillDebtGroup("debt-paid-card", groups.paid, "paid");
   if (empty) empty.hidden = open.length > 0;
 }
 
@@ -2007,11 +2055,39 @@ function debtPayloadFrom(debt, paid) {
   };
 }
 
+function askPaidOnPanel(debt) {
+  return askDialog({
+    title: "Adicionar no painel?",
+    text: `Lançar ${money(debt.amount)} de ${debt.name} como despesa no painel?`,
+    okLabel: "Sim, lançar",
+    cancelLabel: "Não",
+  });
+}
+
+async function addDebtAsExpense(debt) {
+  await api("POST", "/transactions", {
+    description: debt.name,
+    amount: Number(debt.amount),
+    type: "expense",
+    category: "Outros",
+    date: today(),
+  });
+  chartsNeedDraw = true;
+  await loadTransactions();
+}
+
 async function setDebtPaid(debt, paid) {
+  let onPanel = false;
+  if (paid) {
+    const choice = await askPaidOnPanel(debt);
+    if (choice === null) return;
+    onPanel = choice === true;
+  }
   try {
     await api("PUT", `/debts/${debt.id}`, debtPayloadFrom(debt, paid));
+    if (onPanel) await addDebtAsExpense(debt);
     await loadDebts();
-    toast(paid ? "Dívida marcada como paga" : "Dívida reaberta");
+    toast(onPanel ? "Paga e lançada no painel" : paid ? "Dívida marcada como paga" : "Dívida reaberta");
   } catch (err) {
     toast(err.message, "error");
   }
@@ -2045,6 +2121,7 @@ function startEditDebt(debt) {
   debtDue.value = debt.due_date ? String(debt.due_date).slice(0, 10) : "";
   debtNotes.value = debt.notes || "";
   setDebtKind(DEBT_KINDS[debt.kind] ? debt.kind : "other");
+  setDebtPaidFlag(Boolean(debt.paid_at));
   debtSubmit.textContent = "Salvar";
   debtCancel.classList.remove("hidden");
   debtForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2054,6 +2131,9 @@ function startEditDebt(debt) {
 function bindDebts() {
   document.querySelectorAll("#debt-form [data-kind]").forEach((btn) => {
     btn.addEventListener("click", () => setDebtKind(btn.dataset.kind));
+  });
+  document.querySelectorAll("#debt-form [data-paid]").forEach((btn) => {
+    btn.addEventListener("click", () => setDebtPaidFlag(btn.dataset.paid === "1"));
   });
   debtCancel?.addEventListener("click", resetDebtForm);
   debtForm?.addEventListener("submit", async (e) => {
@@ -2065,24 +2145,28 @@ function bindDebts() {
       debtAmount.focus();
       return toast("Valor inválido. Use por exemplo 49,90", "error");
     }
-    const current = debts.find((d) => d.id === editingDebtId);
+    const paid = document.getElementById("debt-paid")?.value === "1";
+    const wasPaid = Boolean(debts.find((d) => d.id === editingDebtId)?.paid_at);
+    let onPanel = false;
+    if (paid && !wasPaid) {
+      const choice = await askPaidOnPanel({ name, amount });
+      if (choice === null) return;
+      onPanel = choice === true;
+    }
     const body = {
       name,
       amount,
       due_date: debtDue.value,
       kind: debtKind.value || "credit_card",
       notes: debtNotes.value.trim(),
-      paid: Boolean(current?.paid_at),
+      paid,
     };
     debtSubmit.disabled = true;
     try {
-      if (editingDebtId) {
-        await api("PUT", `/debts/${editingDebtId}`, body);
-        toast("Dívida atualizada");
-      } else {
-        await api("POST", "/debts", body);
-        toast("Dívida adicionada");
-      }
+      if (editingDebtId) await api("PUT", `/debts/${editingDebtId}`, body);
+      else await api("POST", "/debts", body);
+      if (onPanel) await addDebtAsExpense({ name, amount });
+      toast(onPanel ? "Paga e lançada no painel" : editingDebtId ? "Dívida atualizada" : "Dívida adicionada");
       resetDebtForm();
       await loadDebts();
     } catch (err) {
