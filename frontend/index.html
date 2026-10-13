@@ -384,41 +384,104 @@
 
       <p id="debt-empty" class="empty-note">Nenhuma dívida em aberto. Quando surgir uma fatura ou parcela, registre aqui.</p>
 
-      <div class="sheet-card debt-group" id="debt-late-card" hidden>
-        <div class="chart-header">
-          <h2>Atrasadas</h2>
-          <span class="muted" data-sum></span>
-        </div>
-        <div class="debt-list"></div>
-      </div>
-
-      <div class="sheet-card debt-group" id="debt-soon-card" hidden>
-        <div class="chart-header">
-          <h2>Prestes a vencer</h2>
-          <span class="muted" data-sum></span>
-        </div>
-        <div class="debt-list"></div>
-      </div>
-
-      <div class="sheet-card debt-group" id="debt-next-card" hidden>
-        <div class="chart-header">
-          <h2>Próximo mês</h2>
-          <span class="muted" data-sum></span>
-        </div>
-        <div class="debt-list"></div>
-      </div>
-
-      <div class="sheet-card debt-group" id="debt-later-card" hidden>
-        <div class="chart-header">
-          <h2>Mais pra frente</h2>
-          <span class="muted" data-sum></span>
-        </div>
-        <div class="debt-list"></div>
-      </div>
+      <div id="debt-months" class="month-stack"></div>
 
       <div class="sheet-card debt-group" id="debt-paid-card" hidden>
         <div class="chart-header">
           <h2>Pagas</h2>
+          <span class="muted" data-sum></span>
+        </div>
+        <div class="debt-list"></div>
+      </div>
+    </section>
+
+    <section id="view-subs" class="app-view" hidden>
+      <header class="view-head">
+        <h2>Assinaturas</h2>
+        <p class="muted">Planos que cobram de novo todo mês ou todo ano.</p>
+      </header>
+
+      <div class="cards debt-summary">
+        <div class="card expense">
+          <div class="card-top">
+            <h3>Por mês</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 2v4h4"/><path d="M21 6a9 9 0 1 1-2.2-2.2L21 6"/><path d="M12 7v5l3 2"/></svg></span>
+          </div>
+          <p id="sub-open">R$ 0,00</p>
+          <span class="card-hint" id="sub-open-hint">Nenhuma assinatura</span>
+        </div>
+        <div class="card debt-late">
+          <div class="card-top">
+            <h3>Atrasadas</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg></span>
+          </div>
+          <p id="sub-late">R$ 0,00</p>
+          <span class="card-hint" id="sub-late-hint">Nada atrasado</span>
+        </div>
+        <div class="card debt-soon">
+          <div class="card-top">
+            <h3>Prestes a vencer</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="8"/></svg></span>
+          </div>
+          <p id="sub-soon">R$ 0,00</p>
+          <span class="card-hint" id="sub-soon-hint">Nada neste mês</span>
+        </div>
+        <div class="card debt-nextm">
+          <div class="card-top">
+            <h3>Próximo mês</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+          </div>
+          <p id="sub-month">R$ 0,00</p>
+          <span class="card-hint" id="sub-month-hint">Nada no mês que vem</span>
+        </div>
+      </div>
+
+      <form id="sub-form" class="debt-form">
+        <div class="field f-name">
+          <label for="sub-name">Nome</label>
+          <input type="text" id="sub-name" placeholder="Ex: Netflix, academia, celular…" maxlength="120" autocomplete="off" required>
+        </div>
+        <div class="field f-amount">
+          <label for="sub-amount">Valor</label>
+          <input type="text" id="sub-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+        </div>
+        <div class="field f-due">
+          <label for="sub-due">Próxima cobrança</label>
+          <input type="date" id="sub-due">
+        </div>
+        <div class="field f-kind">
+          <label>Ciclo</label>
+          <input type="hidden" id="sub-cycle" value="monthly">
+          <div class="segmented" role="group" aria-label="Ciclo da assinatura">
+            <button type="button" class="seg-btn active" data-cycle="monthly">Mensal</button>
+            <button type="button" class="seg-btn" data-cycle="yearly">Anual</button>
+          </div>
+        </div>
+        <div class="field f-status">
+          <label>Situação</label>
+          <input type="hidden" id="sub-active" value="1">
+          <div class="segmented" role="group" aria-label="Situação da assinatura">
+            <button type="button" class="seg-btn active" data-active="1">Ativa</button>
+            <button type="button" class="seg-btn" data-active="0">Cancelada</button>
+          </div>
+        </div>
+        <div class="field f-notes">
+          <label for="sub-notes">Observação</label>
+          <input type="text" id="sub-notes" maxlength="240" placeholder="Plano padrão, família…" autocomplete="off">
+        </div>
+        <div class="debt-form-actions">
+          <button type="button" class="btn secondary hidden" id="sub-cancel">Cancelar</button>
+          <button class="btn primary" type="submit" id="sub-submit">Adicionar assinatura</button>
+        </div>
+      </form>
+
+      <p id="sub-empty" class="empty-note">Nenhuma assinatura ativa. Quando tiver um plano que cobra de novo, registre aqui.</p>
+
+      <div id="sub-months" class="month-stack"></div>
+
+      <div class="sheet-card debt-group" id="sub-off-card" hidden>
+        <div class="chart-header">
+          <h2>Canceladas</h2>
           <span class="muted" data-sum></span>
         </div>
         <div class="debt-list"></div>
@@ -469,6 +532,11 @@
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
       <span>Dívidas</span>
       <span class="nav-badge" id="debt-badge" hidden>0</span>
+    </button>
+    <button type="button" class="nav-btn" data-view="subs">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 2v4h4"/><path d="M21 6a9 9 0 1 1-2.2-2.2L21 6"/><path d="M7 22v-4H3"/><path d="M3 18a9 9 0 0 0 14.5 3"/></svg>
+      <span>Assinaturas</span>
+      <span class="nav-badge" id="sub-badge" hidden>0</span>
     </button>
     <button type="button" class="nav-btn" data-view="settings">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="17" r="2" fill="currentColor" stroke="none"/></svg>

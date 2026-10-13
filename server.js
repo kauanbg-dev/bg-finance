@@ -550,16 +550,21 @@ app.put('/transactions/:id', authenticateToken, async (req, res) => {
 
 function mapBankCategory(raw, type) {
   const text = String(raw || '').toLowerCase();
-  if (/mercado|supermerc|aliment|restaurante|ifood|padaria|bar/.test(text)) return 'Alimentacao';
+  if (/mercado|supermerc|aliment|restaurante|ifood|padaria|bar/.test(text)) return 'Alimentação';
   if (/transporte|uber|combust|posto/.test(text)) return 'Transporte';
   if (/assinatura|streaming|spotify|netflix/.test(text)) return 'Assinaturas';
+  if (/internet|telefone|celular|luz|energia|água|agua|conta de/.test(text)) return 'Contas';
   if (/moradia|casa|aluguel|condomin/.test(text)) return 'Moradia';
-  if (/saude|saúde|farmac|drogaria/.test(text)) return 'Saude';
+  if (/saude|saúde|farmac|drogaria/.test(text)) return 'Saúde';
+  if (/pet|racao|ração|veterin/.test(text)) return 'Pets';
+  if (/roupa|shopping|compra/.test(text)) return 'Compras';
+  if (/imposto|ipva|iptu|multa/.test(text)) return 'Impostos';
   if (/lazer|entreten/.test(text)) return 'Lazer';
-  if (/educa|curso|escola/.test(text)) return 'Educacao';
+  if (/educa|curso|escola/.test(text)) return 'Educação';
   if (/trabalho/.test(text)) return 'Trabalho';
-  if (type === 'income' && /salario|salário|holerite/.test(text)) return 'Salario';
+  if (type === 'income' && /salario|salário|holerite/.test(text)) return 'Salário';
   if (type === 'income' && /invest|rendimento|dividendo/.test(text)) return 'Investimentos';
+  if (type === 'income' && /reembolso/.test(text)) return 'Reembolso';
   return 'Outros';
 }
 
@@ -811,6 +816,108 @@ app.delete('/debts/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Erro ao excluir divida:', err);
     return res.status(500).json({ error: 'Erro ao excluir divida' });
+  }
+});
+
+const SUB_CYCLES = ['monthly', 'yearly'];
+
+function subscriptionPayload(body) {
+  const name = String(body.name || '').trim();
+  const cycle = String(body.cycle || '').trim();
+  const amount = Number(body.amount);
+  const notes = String(body.notes || '').trim();
+  const dueRaw = String(body.due_date || '').trim();
+  const due = dueRaw ? parseDate(dueRaw) : null;
+
+  if (
+    !name ||
+    name.length > 120 ||
+    !SUB_CYCLES.includes(cycle) ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    amount >= 1e10 ||
+    notes.length > 240 ||
+    (dueRaw && !due)
+  ) {
+    return null;
+  }
+
+  return {
+    name,
+    cycle,
+    amount,
+    notes: notes || null,
+    dueDate: due,
+    active: body.active !== false,
+  };
+}
+
+app.get('/subscriptions', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, created_at
+       FROM subscriptions
+       WHERE user_id = $1
+       ORDER BY active DESC, due_date NULLS LAST, id DESC`,
+      [req.user.id]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao listar assinaturas:', err);
+    return res.status(500).json({ error: 'Erro ao listar assinaturas' });
+  }
+});
+
+app.post('/subscriptions', authenticateToken, async (req, res) => {
+  const sub = subscriptionPayload(req.body || {});
+  if (!sub) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, created_at`,
+      [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao criar assinatura:', err);
+    return res.status(500).json({ error: 'Erro ao criar assinatura' });
+  }
+});
+
+app.put('/subscriptions/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const sub = subscriptionPayload(req.body || {});
+  if (!id || !sub) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `UPDATE subscriptions
+       SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6
+       WHERE id = $7 AND user_id = $8
+       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, created_at`,
+      [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Assinatura nao encontrada' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao editar assinatura:', err);
+    return res.status(500).json({ error: 'Erro ao editar assinatura' });
+  }
+});
+
+app.delete('/subscriptions/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query('DELETE FROM subscriptions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Assinatura nao encontrada' });
+    return res.json({ deleted: result.rowCount });
+  } catch (err) {
+    console.error('Erro ao excluir assinatura:', err);
+    return res.status(500).json({ error: 'Erro ao excluir assinatura' });
   }
 });
 

@@ -1778,7 +1778,24 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 .debt-form-actions .btn{ width: 100%; min-height: 48px; }
 
 .debt-list{ display: grid; gap: 10px; }
+.month-stack{ display: grid; gap: 12px; }
 .debt-group{ margin-bottom: 12px; }
+.month-stack .debt-group{ margin: 0; }
+.month-title{ display: flex; align-items: center; gap: 8px; min-width: 0; }
+.month-flag{
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: rgba(251, 191, 36, .16);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 800;
+}
+.debt-group.is-late-month{ border-color: rgba(248, 113, 113, .35); }
+.debt-group.is-late-month .month-flag{ background: rgba(248, 113, 113, .16); color: #f87171; }
+.debt-group.is-current-month{ border-color: rgba(251, 191, 36, .28); }
+html[data-theme="light"] .debt-group.is-late-month .month-flag{ color: #b91c1c; }
+html[data-theme="light"] .month-flag{ color: #b45309; }
+html[data-theme="light"] .cat-chip{ color: color-mix(in srgb, var(--c) 78%, #0f172a); }
 .debt-item{
   display: flex;
   flex-direction: column;
@@ -1794,6 +1811,7 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 .debt-item.is-next{ border-left-color: #60a5fa; }
 .debt-item.is-later{ border-left-color: rgba(var(--wash), .28); }
 .debt-item.is-paid{ border-left-color: #34d399; opacity: .82; }
+.debt-item.is-off{ border-left-color: rgba(var(--wash), .28); opacity: .72; }
 .debt-top{
   display: flex;
   justify-content: space-between;
@@ -1951,7 +1969,7 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
   right: var(--edge-right);
   bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-shift, 0px));
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   padding: 6px;
   border-radius: 22px;
@@ -1973,9 +1991,15 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+}
+.nav-btn > span:not(.nav-badge){
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .nav-btn.is-active{
   color: var(--text-strong);
@@ -2053,7 +2077,7 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
   .tabbar{
     left: 50%;
     right: auto;
-    width: min(420px, calc(100% - 32px));
+    width: min(520px, calc(100% - 32px));
     transform: translateX(-50%);
   }
 }
