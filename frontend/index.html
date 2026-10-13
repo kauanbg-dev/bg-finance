@@ -316,13 +316,29 @@
           <p id="debt-open">R$ 0,00</p>
           <span class="card-hint" id="debt-open-hint">Nenhuma dívida</span>
         </div>
-        <div class="card">
+        <div class="card debt-late">
           <div class="card-top">
-            <h3>Próximo vencimento</h3>
+            <h3>Atrasadas</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg></span>
+          </div>
+          <p id="debt-late">R$ 0,00</p>
+          <span class="card-hint" id="debt-late-hint">Nada atrasado</span>
+        </div>
+        <div class="card debt-soon">
+          <div class="card-top">
+            <h3>Prestes a vencer</h3>
+            <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="8"/></svg></span>
+          </div>
+          <p id="debt-soon">R$ 0,00</p>
+          <span class="card-hint" id="debt-soon-hint">Nada neste mês</span>
+        </div>
+        <div class="card debt-nextm">
+          <div class="card-top">
+            <h3>Próximo mês</h3>
             <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
           </div>
-          <p id="debt-next">—</p>
-          <span class="card-hint" id="debt-next-hint">Sem data marcada</span>
+          <p id="debt-month">R$ 0,00</p>
+          <span class="card-hint" id="debt-month-hint">Nada no mês que vem</span>
         </div>
       </div>
 
@@ -348,6 +364,14 @@
             <button type="button" class="seg-btn" data-kind="other">Outro</button>
           </div>
         </div>
+        <div class="field f-status">
+          <label>Situação</label>
+          <input type="hidden" id="debt-paid" value="0">
+          <div class="segmented" role="group" aria-label="Situação da dívida">
+            <button type="button" class="seg-btn active" data-paid="0">Em aberto</button>
+            <button type="button" class="seg-btn" data-paid="1">Já paguei</button>
+          </div>
+        </div>
         <div class="field f-notes">
           <label for="debt-notes">Observação</label>
           <input type="text" id="debt-notes" maxlength="240" placeholder="Fatura de outubro, parcela 3 de 12…" autocomplete="off">
@@ -358,20 +382,46 @@
         </div>
       </form>
 
-      <div class="sheet-card">
+      <p id="debt-empty" class="empty-note">Nenhuma dívida em aberto. Quando surgir uma fatura ou parcela, registre aqui.</p>
+
+      <div class="sheet-card debt-group" id="debt-late-card" hidden>
         <div class="chart-header">
-          <h2>A pagar</h2>
-          <span class="muted" id="debt-count">0 em aberto</span>
+          <h2>Atrasadas</h2>
+          <span class="muted" data-sum></span>
         </div>
-        <div id="debt-list" class="debt-list"></div>
-        <p id="debt-empty" class="empty-note">Nenhuma dívida em aberto. Quando surgir uma fatura ou parcela, registre aqui.</p>
+        <div class="debt-list"></div>
       </div>
 
-      <div class="sheet-card" id="debt-paid-card" hidden>
+      <div class="sheet-card debt-group" id="debt-soon-card" hidden>
+        <div class="chart-header">
+          <h2>Prestes a vencer</h2>
+          <span class="muted" data-sum></span>
+        </div>
+        <div class="debt-list"></div>
+      </div>
+
+      <div class="sheet-card debt-group" id="debt-next-card" hidden>
+        <div class="chart-header">
+          <h2>Próximo mês</h2>
+          <span class="muted" data-sum></span>
+        </div>
+        <div class="debt-list"></div>
+      </div>
+
+      <div class="sheet-card debt-group" id="debt-later-card" hidden>
+        <div class="chart-header">
+          <h2>Mais pra frente</h2>
+          <span class="muted" data-sum></span>
+        </div>
+        <div class="debt-list"></div>
+      </div>
+
+      <div class="sheet-card debt-group" id="debt-paid-card" hidden>
         <div class="chart-header">
           <h2>Pagas</h2>
+          <span class="muted" data-sum></span>
         </div>
-        <div id="debt-paid-list" class="debt-list"></div>
+        <div class="debt-list"></div>
       </div>
     </section>
 
