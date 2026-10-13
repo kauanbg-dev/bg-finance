@@ -562,6 +562,7 @@ function mapBankCategory(raw, type) {
   if (/lazer|entreten/.test(text)) return 'Lazer';
   if (/educa|curso|escola/.test(text)) return 'Educação';
   if (/trabalho/.test(text)) return 'Trabalho';
+  if (/cofrinho|poupanca|poupança|dinheiro guardado/.test(text)) return 'Dinheiro guardado';
   if (type === 'income' && /salario|salário|holerite/.test(text)) return 'Salário';
   if (type === 'income' && /invest|rendimento|dividendo/.test(text)) return 'Investimentos';
   if (type === 'income' && /reembolso/.test(text)) return 'Reembolso';
@@ -828,6 +829,9 @@ function subscriptionPayload(body) {
   const notes = String(body.notes || '').trim();
   const dueRaw = String(body.due_date || '').trim();
   const due = dueRaw ? parseDate(dueRaw) : null;
+  const billedRaw = String(body.billed_due || '').trim();
+  const billed = billedRaw ? parseDate(billedRaw) : null;
+  const payWith = body.pay_with === 'card' ? 'card' : 'other';
 
   if (
     !name ||
@@ -837,7 +841,8 @@ function subscriptionPayload(body) {
     amount <= 0 ||
     amount >= 1e10 ||
     notes.length > 240 ||
-    (dueRaw && !due)
+    (dueRaw && !due) ||
+    (billedRaw && !billed)
   ) {
     return null;
   }
@@ -849,13 +854,15 @@ function subscriptionPayload(body) {
     notes: notes || null,
     dueDate: due,
     active: body.active !== false,
+    payWith,
+    billedDue: billed,
   };
 }
 
 app.get('/subscriptions', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, created_at
+      `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, created_at
        FROM subscriptions
        WHERE user_id = $1
        ORDER BY active DESC, due_date NULLS LAST, id DESC`,
@@ -874,10 +881,10 @@ app.post('/subscriptions', authenticateToken, async (req, res) => {
 
   try {
     const result = await db.query(
-      `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, created_at`,
-      [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active]
+      `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active, pay_with, billed_due)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, created_at`,
+      [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue]
     );
     return res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -894,10 +901,10 @@ app.put('/subscriptions/:id', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       `UPDATE subscriptions
-       SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6
-       WHERE id = $7 AND user_id = $8
-       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, created_at`,
-      [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, id, req.user.id]
+       SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6, pay_with = $7, billed_due = $8
+       WHERE id = $9 AND user_id = $10
+       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, created_at`,
+      [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, id, req.user.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Assinatura nao encontrada' });
     return res.json(result.rows[0]);
@@ -918,6 +925,104 @@ app.delete('/subscriptions/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Erro ao excluir assinatura:', err);
     return res.status(500).json({ error: 'Erro ao excluir assinatura' });
+  }
+});
+
+const SAVE_KINDS = {
+  investment: ['Renda fixa', 'Ações', 'Fundos', 'Tesouro', 'Cripto', 'Previdência', 'Outros'],
+  piggy: ['Viagem', 'Casa', 'Carro', 'Estudos', 'Presentes', 'Emergência', 'Dinheiro guardado', 'Outros'],
+};
+
+function savingPayload(body) {
+  const name = String(body.name || '').trim();
+  const kind = String(body.kind || '').trim();
+  const category = String(body.category || '').trim();
+  const amount = Number(body.amount);
+  const notes = String(body.notes || '').trim();
+  const allowed = SAVE_KINDS[kind];
+
+  if (
+    !name ||
+    name.length > 120 ||
+    !allowed ||
+    !allowed.includes(category) ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    amount >= 1e10 ||
+    notes.length > 240
+  ) {
+    return null;
+  }
+
+  return { name, kind, category, amount, notes: notes || null };
+}
+
+app.get('/savings', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, name, kind, category, amount, notes, created_at
+       FROM savings
+       WHERE user_id = $1
+       ORDER BY kind, category, id DESC`,
+      [req.user.id]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao listar guardado:', err);
+    return res.status(500).json({ error: 'Erro ao listar guardado' });
+  }
+});
+
+app.post('/savings', authenticateToken, async (req, res) => {
+  const item = savingPayload(req.body || {});
+  if (!item) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `INSERT INTO savings (user_id, name, kind, category, amount, notes)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, kind, category, amount, notes, created_at`,
+      [req.user.id, item.name, item.kind, item.category, item.amount, item.notes]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao criar guardado:', err);
+    return res.status(500).json({ error: 'Erro ao criar guardado' });
+  }
+});
+
+app.put('/savings/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const item = savingPayload(req.body || {});
+  if (!id || !item) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `UPDATE savings
+       SET name = $1, kind = $2, category = $3, amount = $4, notes = $5
+       WHERE id = $6 AND user_id = $7
+       RETURNING id, name, kind, category, amount, notes, created_at`,
+      [item.name, item.kind, item.category, item.amount, item.notes, id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Item nao encontrado' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao editar guardado:', err);
+    return res.status(500).json({ error: 'Erro ao editar guardado' });
+  }
+});
+
+app.delete('/savings/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query('DELETE FROM savings WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Item nao encontrado' });
+    return res.json({ deleted: result.rowCount });
+  } catch (err) {
+    console.error('Erro ao excluir guardado:', err);
+    return res.status(500).json({ error: 'Erro ao excluir guardado' });
   }
 });
 
