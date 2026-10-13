@@ -3,18 +3,45 @@ const previewMode = new URLSearchParams(location.search).get("preview") === "1";
 if (!token && !previewMode) window.location.href = "login.html";
 
 const CATEGORY_KEY = "bg-finance-categories";
-const INCOME_CATS = ["Salário", "Freelance", "Investimentos", "Extra", "Outros"];
+const INCOME_CATS = ["Salário", "Freelance", "Investimentos", "Benefícios", "Reembolso", "Outros"];
 const EXPENSE_CATS = [
   "Alimentação",
   "Moradia",
+  "Contas",
   "Transporte",
   "Saúde",
-  "Lazer",
   "Educação",
+  "Lazer",
   "Assinaturas",
+  "Compras",
+  "Pets",
+  "Cuidados",
+  "Impostos",
   "Trabalho",
   "Outros",
 ];
+const CAT_COLORS = {
+  salario: "#34d399",
+  freelance: "#2dd4bf",
+  investimentos: "#60a5fa",
+  beneficios: "#a3e635",
+  reembolso: "#22d3ee",
+  extra: "#fbbf24",
+  alimentacao: "#fb923c",
+  moradia: "#818cf8",
+  contas: "#facc15",
+  transporte: "#38bdf8",
+  saude: "#f87171",
+  educacao: "#a78bfa",
+  lazer: "#e879f9",
+  assinaturas: "#c084fc",
+  compras: "#fb7185",
+  pets: "#f59e0b",
+  cuidados: "#f9a8d4",
+  impostos: "#78716c",
+  trabalho: "#64748b",
+  outros: "#94a3b8",
+};
 const MONTHS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTHS_LONG = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const PALETTE = ["#60a5fa", "#a78bfa", "#34d399", "#f87171", "#fbbf24", "#22d3ee", "#fb7185", "#c084fc", "#4ade80", "#94a3b8"];
@@ -31,12 +58,19 @@ const KEYWORDS = [
   [/freelance|freela|cliente/i, "Freelance", "income"],
   [/dividend|rendimento|juros/i, "Investimentos", "income"],
   [/mercado|ifood|padaria|restaurante|lanche|almo[cç]o|jantar|feira/i, "Alimentação", "expense"],
-  [/aluguel|condom[ií]nio|luz|energia|água|agua|internet|iptu/i, "Moradia", "expense"],
+  [/aluguel|condom[ií]nio|financiamento/i, "Moradia", "expense"],
+  [/luz|energia|água|agua|internet|telefone|celular|conta de/i, "Contas", "expense"],
   [/uber|\b99\b|gasolina|combust[ií]vel|passagem|estacionamento|metr[oô]|ônibus|onibus/i, "Transporte", "expense"],
   [/farm[aá]cia|m[eé]dic|plano de sa[uú]de|consulta|academia/i, "Saúde", "expense"],
   [/netflix|spotify|prime|youtube|assinatura|disney|hbo/i, "Assinaturas", "expense"],
   [/cinema|\bbar\b|viagem|show|lazer/i, "Lazer", "expense"],
   [/curso|faculdade|livro|escola/i, "Educação", "expense"],
+  [/roupa|shopping|shopee|magazine|compra/i, "Compras", "expense"],
+  [/pet|ração|racao|veterin/i, "Pets", "expense"],
+  [/salão|salao|barbe|cabelo|estética|estetica/i, "Cuidados", "expense"],
+  [/imposto|ipva|iptu|multa|darf/i, "Impostos", "expense"],
+  [/reembolso/i, "Reembolso", "income"],
+  [/benef[ií]cio|vale|13º|13o|f[eé]rias|plr/i, "Benefícios", "income"],
 ];
 
 function money(n) {
@@ -75,9 +109,18 @@ function parseAmount(raw) {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : NaN;
 }
 
+function catKey(name) {
+  return String(name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
 function catColor(name) {
+  const known = CAT_COLORS[catKey(name)];
+  if (known) return known;
   let h = 0;
-  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  for (const ch of catKey(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
 
@@ -277,6 +320,7 @@ let previewProfile = {
 let previewSettings = { charts: { flow: true, category: true, mix: true, daily: true } };
 let previewTelegram = { linked: false };
 let previewDebts = [];
+let previewSubs = [];
 
 function seedPreviewDebts() {
   if (previewDebts.length) return;
@@ -287,7 +331,22 @@ function seedPreviewDebts() {
     { id: ++previewSeq, name: "Cartão de crédito", kind: "credit_card", amount: 842.3, due_date: soon, notes: "Fatura do mês", paid_at: null },
     { id: ++previewSeq, name: "Empréstimo pessoal", kind: "loan", amount: 3200, due_date: late, notes: "Parcela 4 de 12", paid_at: null },
     { id: ++previewSeq, name: "Fatura do cartão", kind: "credit_card", amount: 960, due_date: next, notes: "Fecha no mês que vem", paid_at: null },
+    { id: ++previewSeq, name: "IPVA", kind: "other", amount: 480, due_date: `${shiftMonth(today().slice(0, 7), 3)}-15`, notes: "Parcela 1", paid_at: null },
+    { id: ++previewSeq, name: "Material da escola", kind: "other", amount: 320, due_date: `${shiftMonth(today().slice(0, 7), 4)}-10`, notes: "", paid_at: null },
     { id: ++previewSeq, name: "Parcela antiga", kind: "loan", amount: 400, due_date: shiftDay(today(), -40), notes: "", paid_at: new Date().toISOString() },
+  ];
+}
+
+function seedPreviewSubs() {
+  if (previewSubs.length) return;
+  const next = `${shiftMonth(today().slice(0, 7), 1)}-08`;
+  previewSubs = [
+    { id: ++previewSeq, name: "Netflix", cycle: "monthly", amount: 55.9, due_date: shiftDay(today(), 2), notes: "Plano padrão", active: true },
+    { id: ++previewSeq, name: "Academia", cycle: "monthly", amount: 129.9, due_date: shiftDay(today(), -6), notes: "", active: true },
+    { id: ++previewSeq, name: "iCloud", cycle: "yearly", amount: 149.9, due_date: next, notes: "200 GB", active: true },
+    { id: ++previewSeq, name: "Seguro do carro", cycle: "yearly", amount: 890, due_date: `${shiftMonth(today().slice(0, 7), 3)}-20`, notes: "", active: true },
+    { id: ++previewSeq, name: "Domínio", cycle: "yearly", amount: 60, due_date: `${shiftMonth(today().slice(0, 7), 4)}-05`, notes: "", active: true },
+    { id: ++previewSeq, name: "Spotify", cycle: "monthly", amount: 21.9, due_date: shiftDay(today(), -20), notes: "", active: false },
   ];
 }
 
@@ -394,6 +453,31 @@ function previewApi(method, url, body) {
       return { ...previewDebts[index] };
     }
     if (method === "DELETE" && index >= 0) previewDebts.splice(index, 1);
+    return {};
+  }
+  if (url === "/subscriptions" || url.startsWith("/subscriptions/")) {
+    seedPreviewSubs();
+    const id = url.split("/")[2];
+    if (method === "GET") return previewSubs.map((item) => ({ ...item }));
+    if (method === "POST") {
+      const created = {
+        id: ++previewSeq,
+        name: body.name,
+        cycle: body.cycle || "monthly",
+        amount: body.amount,
+        due_date: body.due_date || null,
+        notes: body.notes || "",
+        active: body.active !== false,
+      };
+      previewSubs.unshift(created);
+      return { ...created };
+    }
+    const index = previewSubs.findIndex((item) => String(item.id) === id);
+    if (method === "PUT" && index >= 0) {
+      previewSubs[index] = { ...previewSubs[index], ...body, active: body.active !== false };
+      return { ...previewSubs[index] };
+    }
+    if (method === "DELETE" && index >= 0) previewSubs.splice(index, 1);
     return {};
   }
   const id = url.split("/")[2];
@@ -629,12 +713,15 @@ if (token || previewMode) {
 
 function categoriesFor(type) {
   const fromApi = apiCategories.filter((c) => c.type === type);
-  const byName = new Map(fromApi.map((c) => [c.name.toLowerCase(), c]));
+  const byKey = new Map(fromApi.map((c) => [catKey(c.name), c]));
   const defaults = (type === "income" ? INCOME_CATS : EXPENSE_CATS).filter((name) => name !== "Outros");
-  const known = new Set([...defaults, "Outros"].map((name) => name.toLowerCase()));
-  const pick = (name) => byName.get(name.toLowerCase()) || { id: name, name, type };
+  const known = new Set([...defaults, "Outros"].map(catKey));
+  const pick = (name) => {
+    const found = byKey.get(catKey(name));
+    return found ? { ...found, name } : { id: name, name, type };
+  };
   const custom = fromApi
-    .filter((c) => !known.has(c.name.toLowerCase()))
+    .filter((c) => !known.has(catKey(c.name)))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   return [...defaults.map(pick), ...custom, pick("Outros")];
 }
@@ -1472,7 +1559,10 @@ function demoTransactions() {
     add(ago, 21, "Curso online", 129.9, "expense", "Educação");
     add(ago, 24, "Cinema e jantar", 180 - ago * 30, "expense", "Lazer");
   });
-  add(0, 3, "Farmácia", 74.5, "expense", "Saúde");
+    add(0, 3, "Farmácia", 74.5, "expense", "Saúde");
+  add(0, 4, "Internet", 119.9, "expense", "Contas");
+  add(0, 6, "Ração", 89, "expense", "Pets");
+  add(0, 9, "Camiseta", 79.9, "expense", "Compras");
   add(1, 27, "Rendimento CDB", 86.4, "income", "Investimentos");
   return items.filter((t) => t.date <= today());
 }
@@ -1708,7 +1798,7 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------- menu, dívidas e ajustes ---------- */
 
-const VIEWS = new Set(["home", "debts", "settings"]);
+const VIEWS = new Set(["home", "debts", "subs", "settings"]);
 let debts = [];
 let editingDebtId = null;
 
@@ -1902,9 +1992,7 @@ function debtDay(debt) {
   return debt.due_date ? String(debt.due_date).slice(0, 10) : "";
 }
 
-function debtBucket(debt) {
-  if (debt.paid_at) return "paid";
-  const day = debtDay(debt);
+function scheduleBucket(day) {
   if (!day) return "later";
   const now = today();
   if (day < now) return "late";
@@ -1915,16 +2003,17 @@ function debtBucket(debt) {
   return "later";
 }
 
+function debtBucket(debt) {
+  if (debt.paid_at) return "paid";
+  return scheduleBucket(debtDay(debt));
+}
+
 function debtStatus(debt, bucket) {
   if (bucket === "paid") return { text: "Paga", tone: "good" };
   const info = dueMeta(debt.due_date);
-  if (bucket === "late") return info || { text: "Atrasada", tone: "bad" };
-  if (bucket === "soon") return info || { text: "Neste mês", tone: "warn" };
-  if (bucket === "next") {
-    const month = MONTHS_FULL[Number(debtDay(debt).slice(5, 7)) - 1];
-    return { text: month ? month[0].toUpperCase() + month.slice(1) : "Próximo mês", tone: "next" };
-  }
-  return { text: debt.due_date ? "Mais pra frente" : "Sem data", tone: "" };
+  if (info) return info;
+  if (bucket === "late") return { text: "Atrasada", tone: "bad" };
+  return null;
 }
 
 function debtCard(debt, bucket) {
@@ -1951,10 +2040,12 @@ function debtCard(debt, bucket) {
   kind.className = "tag";
   kind.textContent = DEBT_KINDS[debt.kind] || "Outro";
   tags.appendChild(kind);
-  const tag = document.createElement("span");
-  tag.className = `tag ${info.tone}`.trim();
-  tag.textContent = info.text;
-  tags.appendChild(tag);
+  if (info) {
+    const tag = document.createElement("span");
+    tag.className = `tag ${info.tone}`.trim();
+    tag.textContent = info.text;
+    tags.appendChild(tag);
+  }
   main.append(title, meta, tags);
   const amount = document.createElement("p");
   amount.className = "debt-amount";
@@ -1985,6 +2076,60 @@ function debtCard(debt, bucket) {
 
 function sumDebts(items) {
   return items.reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
+}
+
+function monthLabel(key) {
+  if (!key) return "Sem data";
+  const [year, month] = key.split("-");
+  const name = MONTHS_LONG[Number(month) - 1] || key;
+  return `${name} ${year}`;
+}
+
+function renderMonthStack(hostId, items, dayOf, cardFor) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = String(dayOf(item) || "").slice(0, 7);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  const now = today().slice(0, 7);
+  const keys = [...groups.keys()].sort((a, b) => (a || "9999").localeCompare(b || "9999"));
+  host.replaceChildren(...keys.map((key) => {
+    const list = groups.get(key).sort((a, b) => String(dayOf(a)).localeCompare(String(dayOf(b))));
+    const section = document.createElement("div");
+    section.className = "sheet-card debt-group";
+    if (key && key < now) section.classList.add("is-late-month");
+    else if (key === now) section.classList.add("is-current-month");
+    const header = document.createElement("div");
+    header.className = "chart-header";
+    const title = document.createElement("div");
+    title.className = "month-title";
+    const heading = document.createElement("h2");
+    heading.textContent = monthLabel(key);
+    title.appendChild(heading);
+    if (key && key < now) {
+      const flag = document.createElement("span");
+      flag.className = "month-flag";
+      flag.textContent = "Atrasado";
+      title.appendChild(flag);
+    } else if (key === now) {
+      const flag = document.createElement("span");
+      flag.className = "month-flag";
+      flag.textContent = "Este mês";
+      title.appendChild(flag);
+    }
+    const sum = document.createElement("span");
+    sum.className = "muted";
+    sum.textContent = money(sumDebts(list));
+    header.append(title, sum);
+    const body = document.createElement("div");
+    body.className = "debt-list";
+    body.append(...list.map((item) => cardFor(item)));
+    section.append(header, body);
+    return section;
+  }));
 }
 
 function fillDebtGroup(id, items, bucket) {
@@ -2026,10 +2171,7 @@ function renderDebts() {
     badge.hidden = urgent === 0;
     badge.textContent = urgent > 9 ? "9+" : String(urgent);
   }
-  fillDebtGroup("debt-late-card", groups.late, "late");
-  fillDebtGroup("debt-soon-card", groups.soon, "soon");
-  fillDebtGroup("debt-next-card", groups.next, "next");
-  fillDebtGroup("debt-later-card", groups.later, "later");
+  renderMonthStack("debt-months", open, debtDay, (debt) => debtCard(debt, debtBucket(debt)));
   fillDebtGroup("debt-paid-card", groups.paid, "paid");
   if (empty) empty.hidden = open.length > 0;
 }
@@ -2177,6 +2319,303 @@ function bindDebts() {
   });
 }
 
+const SUB_CYCLES = { monthly: "Mensal", yearly: "Anual" };
+let subscriptions = [];
+let editingSubId = null;
+
+const subForm = document.getElementById("sub-form");
+const subName = document.getElementById("sub-name");
+const subAmount = document.getElementById("sub-amount");
+const subDue = document.getElementById("sub-due");
+const subCycle = document.getElementById("sub-cycle");
+const subNotes = document.getElementById("sub-notes");
+const subSubmit = document.getElementById("sub-submit");
+const subCancel = document.getElementById("sub-cancel");
+
+function addCycle(iso, cycle) {
+  const base = String(iso || today()).slice(0, 10);
+  const [y, m, d] = base.split("-").map(Number);
+  const months = cycle === "yearly" ? 12 : 1;
+  const target = new Date(y, m - 1 + months, 1, 12);
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d, last));
+  return `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`;
+}
+
+function setSubCycle(cycle) {
+  if (subCycle) subCycle.value = cycle;
+  document.querySelectorAll("#sub-form [data-cycle]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.cycle === cycle);
+  });
+}
+
+function setSubActive(active) {
+  const input = document.getElementById("sub-active");
+  if (input) input.value = active ? "1" : "0";
+  document.querySelectorAll("#sub-form [data-active]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.active === (active ? "1" : "0"));
+  });
+}
+
+function resetSubForm() {
+  editingSubId = null;
+  subForm?.reset();
+  setSubCycle("monthly");
+  setSubActive(true);
+  if (subSubmit) subSubmit.textContent = "Adicionar assinatura";
+  subCancel?.classList.add("hidden");
+}
+
+function subDay(sub) {
+  return sub.due_date ? String(sub.due_date).slice(0, 10) : "";
+}
+
+function subBucket(sub) {
+  if (sub.active === false) return "off";
+  return scheduleBucket(subDay(sub));
+}
+
+function monthlyAmount(sub) {
+  const amount = Number(sub.amount || 0);
+  return sub.cycle === "yearly" ? amount / 12 : amount;
+}
+
+function subPayloadFrom(sub, extra = {}) {
+  return {
+    name: extra.name ?? sub.name,
+    cycle: extra.cycle ?? sub.cycle ?? "monthly",
+    amount: Number(extra.amount ?? sub.amount),
+    due_date: extra.due_date !== undefined ? extra.due_date : subDay(sub),
+    notes: extra.notes !== undefined ? extra.notes : (sub.notes || ""),
+    active: extra.active !== undefined ? extra.active : sub.active !== false,
+  };
+}
+
+function subCard(sub, bucket) {
+  const off = bucket === "off";
+  const article = document.createElement("article");
+  article.className = `debt-item is-${off ? "off" : bucket}`;
+  const info = off ? { text: "Cancelada", tone: "" } : debtStatus(sub, bucket);
+
+  const top = document.createElement("div");
+  top.className = "debt-top";
+  const main = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "debt-title";
+  title.textContent = sub.name;
+  const meta = document.createElement("p");
+  meta.className = "debt-meta";
+  const parts = [];
+  if (sub.due_date) parts.push(formatDate(subDay(sub)));
+  if (sub.notes) parts.push(sub.notes);
+  meta.textContent = parts.join(" · ") || (off ? "Cancelada" : "Sem data");
+  const tags = document.createElement("div");
+  tags.className = "debt-tags";
+  const cycle = document.createElement("span");
+  cycle.className = "tag";
+  cycle.textContent = SUB_CYCLES[sub.cycle] || "Mensal";
+  tags.appendChild(cycle);
+  if (info) {
+    const tag = document.createElement("span");
+    tag.className = `tag ${info.tone}`.trim();
+    tag.textContent = info.text;
+    tags.appendChild(tag);
+  }
+  main.append(title, meta, tags);
+  const amount = document.createElement("p");
+  amount.className = "debt-amount";
+  amount.textContent = money(sub.amount);
+  top.append(main, amount);
+
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  if (off) {
+    const reopen = document.createElement("button");
+    reopen.type = "button";
+    reopen.className = "btn secondary";
+    reopen.textContent = "Reativar";
+    reopen.addEventListener("click", () => setSubActiveState(sub, true));
+    actions.appendChild(reopen);
+  } else {
+    const pay = document.createElement("button");
+    pay.type = "button";
+    pay.className = "pay-btn";
+    pay.textContent = "Marcar como paga";
+    pay.addEventListener("click", () => registerSubPayment(sub));
+    actions.append(pay, debtAction(ICON.edit, "Editar", () => startEditSub(sub)));
+  }
+  actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeSub(sub), "delete"));
+  article.append(top, actions);
+  return article;
+}
+
+function fillSubGroup(id, items, bucket) {
+  const card = document.getElementById(id);
+  const list = card?.querySelector(".debt-list");
+  const sum = card?.querySelector("[data-sum]");
+  if (!card || !list) return;
+  const ordered = [...items].sort((a, b) => subDay(a).localeCompare(subDay(b)));
+  card.hidden = ordered.length === 0;
+  list.replaceChildren(...ordered.map((sub) => subCard(sub, bucket)));
+  if (sum) sum.textContent = ordered.length ? money(sumDebts(ordered)) : "";
+}
+
+function renderSubscriptions() {
+  const groups = { late: [], soon: [], next: [], later: [], off: [] };
+  subscriptions.forEach((sub) => groups[subBucket(sub)].push(sub));
+  const active = subscriptions.filter((sub) => sub.active !== false);
+  const openEl = document.getElementById("sub-open");
+  const hint = document.getElementById("sub-open-hint");
+  const lateEl = document.getElementById("sub-late");
+  const lateHint = document.getElementById("sub-late-hint");
+  const soonEl = document.getElementById("sub-soon");
+  const soonHint = document.getElementById("sub-soon-hint");
+  const monthEl = document.getElementById("sub-month");
+  const monthHint = document.getElementById("sub-month-hint");
+  const badge = document.getElementById("sub-badge");
+  const empty = document.getElementById("sub-empty");
+  const nextName = MONTHS_FULL[Number(shiftMonth(today().slice(0, 7), 1).slice(5)) - 1];
+  const monthTotal = active.reduce((sum, sub) => sum + monthlyAmount(sub), 0);
+  if (openEl) openEl.textContent = money(monthTotal);
+  if (hint) hint.textContent = active.length === 1 ? "1 ativa" : active.length ? `${active.length} ativas` : "Nenhuma assinatura";
+  if (lateEl) lateEl.textContent = money(sumDebts(groups.late));
+  if (lateHint) lateHint.textContent = groups.late.length === 1 ? "1 atrasada" : groups.late.length ? `${groups.late.length} atrasadas` : "Nada atrasado";
+  if (soonEl) soonEl.textContent = money(sumDebts(groups.soon));
+  if (soonHint) soonHint.textContent = groups.soon.length === 1 ? "1 neste mês" : groups.soon.length ? `${groups.soon.length} neste mês` : "Nada neste mês";
+  if (monthEl) monthEl.textContent = money(sumDebts(groups.next));
+  if (monthHint) monthHint.textContent = groups.next.length ? nextName : "Nada no mês que vem";
+  const urgent = groups.late.length + groups.soon.length;
+  if (badge) {
+    badge.hidden = urgent === 0;
+    badge.textContent = urgent > 9 ? "9+" : String(urgent);
+  }
+  renderMonthStack("sub-months", active, subDay, (sub) => subCard(sub, subBucket(sub)));
+  fillSubGroup("sub-off-card", groups.off, "off");
+  if (empty) empty.hidden = active.length > 0;
+}
+
+async function loadSubscriptions() {
+  try {
+    subscriptions = await api("GET", "/subscriptions");
+  } catch (err) {
+    subscriptions = [];
+    toast(err.message, "error");
+  }
+  renderSubscriptions();
+}
+
+async function addSubExpense(sub) {
+  await api("POST", "/transactions", {
+    description: sub.name,
+    amount: Number(sub.amount),
+    type: "expense",
+    category: "Assinaturas",
+    date: today(),
+  });
+  chartsNeedDraw = true;
+  await loadTransactions();
+}
+
+async function registerSubPayment(sub) {
+  const choice = await askPaidOnPanel(sub);
+  if (choice === null) return;
+  const nextDue = addCycle(sub.due_date, sub.cycle);
+  try {
+    await api("PUT", `/subscriptions/${sub.id}`, subPayloadFrom(sub, { due_date: nextDue, active: true }));
+    if (choice) await addSubExpense(sub);
+    await loadSubscriptions();
+    const when = formatDate(nextDue);
+    toast(choice ? `Paga e lançada no painel. Próxima em ${when}` : `Cobrança marcada como paga. Próxima em ${when}`);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function setSubActiveState(sub, active) {
+  try {
+    await api("PUT", `/subscriptions/${sub.id}`, subPayloadFrom(sub, { active }));
+    await loadSubscriptions();
+    toast(active ? "Assinatura reativada" : "Assinatura cancelada");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function removeSub(sub) {
+  try {
+    await api("DELETE", `/subscriptions/${sub.id}`);
+    if (editingSubId === sub.id) resetSubForm();
+    await loadSubscriptions();
+    toast(`"${sub.name}" excluída`, "info", {
+      label: "Desfazer",
+      run: async () => {
+        try {
+          await api("POST", "/subscriptions", subPayloadFrom(sub));
+          await loadSubscriptions();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      },
+    });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function startEditSub(sub) {
+  editingSubId = sub.id;
+  subName.value = sub.name;
+  subAmount.value = Number(sub.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  subDue.value = subDay(sub);
+  subNotes.value = sub.notes || "";
+  setSubCycle(SUB_CYCLES[sub.cycle] ? sub.cycle : "monthly");
+  setSubActive(sub.active !== false);
+  subSubmit.textContent = "Salvar";
+  subCancel.classList.remove("hidden");
+  subForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  subName.focus();
+}
+
+function bindSubscriptions() {
+  document.querySelectorAll("#sub-form [data-cycle]").forEach((btn) => {
+    btn.addEventListener("click", () => setSubCycle(btn.dataset.cycle));
+  });
+  document.querySelectorAll("#sub-form [data-active]").forEach((btn) => {
+    btn.addEventListener("click", () => setSubActive(btn.dataset.active === "1"));
+  });
+  subCancel?.addEventListener("click", resetSubForm);
+  subForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = subName.value.trim();
+    const amount = parseAmount(subAmount.value);
+    if (!name) return toast("Informe o nome da assinatura", "error");
+    if (Number.isNaN(amount)) {
+      subAmount.focus();
+      return toast("Valor inválido. Use por exemplo 49,90", "error");
+    }
+    const body = {
+      name,
+      amount,
+      due_date: subDue.value,
+      cycle: subCycle.value || "monthly",
+      notes: subNotes.value.trim(),
+      active: document.getElementById("sub-active")?.value !== "0",
+    };
+    subSubmit.disabled = true;
+    try {
+      if (editingSubId) await api("PUT", `/subscriptions/${editingSubId}`, body);
+      else await api("POST", "/subscriptions", body);
+      toast(editingSubId ? "Assinatura atualizada" : "Assinatura adicionada");
+      resetSubForm();
+      await loadSubscriptions();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      subSubmit.disabled = false;
+    }
+  });
+}
+
 let telegramState = { configured: false, linked: false, username: "" };
 
 function paintTelegram() {
@@ -2246,6 +2685,7 @@ function bindTelegram() {
   applyChartPrefs();
   bindNavigation();
   bindDebts();
+  bindSubscriptions();
   bindTelegram();
   const start = viewFromHash();
   if (start !== "home") showView(start, false);
@@ -2253,7 +2693,7 @@ function bindTelegram() {
   if (!document.getElementById("view-home")?.hidden) renderDashboard();
   await loadCategories();
   await loadSettings();
-  await Promise.all([loadTransactions(), loadDebts()]);
+  await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions()]);
 })();
 
 /* ---------- controles customizados ---------- */

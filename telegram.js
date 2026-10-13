@@ -82,17 +82,23 @@ function parseCommand(text) {
 
 function categoryName(raw, type) {
   const text = String(raw || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (/mercado|supermerc|aliment|restaurante|ifood|padaria|bar|almoco|jantar/.test(text)) return 'Alimentacao';
+  if (/mercado|supermerc|aliment|restaurante|ifood|padaria|bar|almoco|jantar/.test(text)) return 'Alimentação';
   if (/transporte|uber|\b99\b|combust|posto/.test(text)) return 'Transporte';
   if (/assinatura|streaming|spotify|netflix/.test(text)) return 'Assinaturas';
+  if (/internet|telefone|celular|luz|energia|agua|conta de/.test(text)) return 'Contas';
   if (/moradia|casa|aluguel|condomin/.test(text)) return 'Moradia';
-  if (/saude|farmac|drogaria/.test(text)) return 'Saude';
+  if (/saude|farmac|drogaria/.test(text)) return 'Saúde';
+  if (/pet|racao|veterin/.test(text)) return 'Pets';
+  if (/roupa|shopping|compra/.test(text)) return 'Compras';
+  if (/imposto|ipva|iptu|multa/.test(text)) return 'Impostos';
   if (/lazer|cinema|entreten/.test(text)) return 'Lazer';
-  if (/educa|curso|escola/.test(text)) return 'Educacao';
+  if (/educa|curso|escola/.test(text)) return 'Educação';
   if (/trabalho/.test(text)) return 'Trabalho';
-  if (type === 'income' && /salario|holerite/.test(text)) return 'Salario';
+  if (type === 'income' && /salario|holerite/.test(text)) return 'Salário';
   if (type === 'income' && /freelance/.test(text)) return 'Freelance';
   if (type === 'income' && /invest|rendimento|dividendo/.test(text)) return 'Investimentos';
+  if (type === 'income' && /reembolso/.test(text)) return 'Reembolso';
+  if (type === 'income' && /beneficio|vr\b|vale|ferias|plr/.test(text)) return 'Benefícios';
   return 'Outros';
 }
 

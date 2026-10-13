@@ -61,6 +61,20 @@ async function initDatabase() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(120) NOT NULL,
+      cycle VARCHAR(20) NOT NULL CHECK (cycle IN ('monthly', 'yearly')),
+      amount NUMERIC(12,2) NOT NULL,
+      due_date DATE,
+      notes VARCHAR(240),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS categories (
       id SERIAL PRIMARY KEY,
       name VARCHAR(120) NOT NULL,
@@ -94,23 +108,49 @@ async function initDatabase() {
     );
   `);
 
+  const renames = [
+    ['Salario', 'Salário', 'income'],
+    ['Alimentacao', 'Alimentação', 'expense'],
+    ['Saude', 'Saúde', 'expense'],
+    ['Educacao', 'Educação', 'expense'],
+  ];
+  for (const [from, to, type] of renames) {
+    await pool.query(
+      `UPDATE categories
+       SET name = $1
+       WHERE user_id IS NULL AND type = $2 AND name = $3
+         AND NOT EXISTS (
+           SELECT 1 FROM categories c
+           WHERE c.user_id IS NULL AND c.type = $2 AND c.name = $1
+         )`,
+      [to, type, from]
+    );
+  }
+
   await pool.query(`
     INSERT INTO categories (name, type, user_id)
     SELECT name, type, NULL
     FROM (
       VALUES
-        ('Salario', 'income'),
+        ('Salário', 'income'),
         ('Freelance', 'income'),
         ('Investimentos', 'income'),
+        ('Benefícios', 'income'),
+        ('Reembolso', 'income'),
         ('Extra', 'income'),
         ('Outros', 'income'),
-        ('Alimentacao', 'expense'),
+        ('Alimentação', 'expense'),
         ('Moradia', 'expense'),
+        ('Contas', 'expense'),
         ('Transporte', 'expense'),
-        ('Saude', 'expense'),
+        ('Saúde', 'expense'),
+        ('Educação', 'expense'),
         ('Lazer', 'expense'),
-        ('Educacao', 'expense'),
         ('Assinaturas', 'expense'),
+        ('Compras', 'expense'),
+        ('Pets', 'expense'),
+        ('Cuidados', 'expense'),
+        ('Impostos', 'expense'),
         ('Trabalho', 'expense'),
         ('Outros', 'expense')
     ) AS defaults(name, type)
