@@ -2034,6 +2034,14 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
   touch-action: manipulation;
 }
+.nav-mark{
+  width: 22px;
+  height: 22px;
+  background: currentColor;
+  -webkit-mask: url("piggy.png") center / contain no-repeat;
+  mask: url("piggy.png") center / contain no-repeat;
+  mask-mode: alpha;
+}
 .nav-btn{
   position: relative;
   display: flex;

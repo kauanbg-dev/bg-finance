@@ -1,4 +1,4 @@
-const CACHE = 'bg-finance-v17';
+const CACHE = 'bg-finance-v18';
 const SHELL = [
   '/',
   '/index.html',
@@ -15,6 +15,7 @@ const SHELL = [
   '/reset.js',
   '/theme.js',
   '/logo.png',
+  '/piggy.png',
   '/icon-192.png',
   '/icon-512.png',
   '/manifest.webmanifest',
