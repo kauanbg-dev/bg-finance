@@ -70,6 +70,24 @@ async function initDatabase() {
       due_date DATE,
       notes VARCHAR(240),
       active BOOLEAN NOT NULL DEFAULT TRUE,
+      pay_with VARCHAR(20) NOT NULL DEFAULT 'other',
+      billed_due DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS pay_with VARCHAR(20) NOT NULL DEFAULT 'other'`);
+  await pool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billed_due DATE`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS savings (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(120) NOT NULL,
+      kind VARCHAR(20) NOT NULL CHECK (kind IN ('investment', 'piggy')),
+      category VARCHAR(40) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      notes VARCHAR(240),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -152,6 +170,7 @@ async function initDatabase() {
         ('Cuidados', 'expense'),
         ('Impostos', 'expense'),
         ('Trabalho', 'expense'),
+        ('Dinheiro guardado', 'expense'),
         ('Outros', 'expense')
     ) AS defaults(name, type)
     WHERE NOT EXISTS (

@@ -1744,6 +1744,40 @@ html[data-theme="light"] .toast{
 .card.debt-late p{ color: var(--money-out); }
 .card.debt-soon p{ color: #fbbf24; }
 .card.debt-nextm p{ color: #93c5fd; }
+.card.save-invest{ --accent: #60a5fa; }
+.card.save-piggy{ --accent: #fbbf24; }
+.card.save-invest p{ color: #93c5fd; }
+.card.save-piggy p{ color: #fbbf24; }
+html[data-theme="light"] .card.save-invest p{ color: #1d4ed8; }
+html[data-theme="light"] .card.save-piggy p{ color: #b45309; }
+.save-cat{
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(var(--wash), .04);
+  border: 1px solid rgba(var(--wash), .08);
+  border-left: 4px solid var(--c, #94a3b8);
+}
+.save-cat-top{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.save-cat-top h3{ font-size: 16px; }
+.save-cat-top p{
+  color: var(--c, #94a3b8);
+  font-size: 18px;
+  font-weight: 800;
+}
+.save-items{ display: grid; gap: 8px; margin-top: 12px; }
+.save-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.save-row .debt-title{ font-size: 14px; }
+.save-row .debt-amount{ font-size: 15px; }
 html[data-theme="light"] .card.debt-soon p{ color: #b45309; }
 html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 
@@ -1769,6 +1803,26 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 .f-due{ grid-area: due; }
 .f-kind{ grid-area: kind; }
 .f-status{ grid-area: status; }
+.f-pay{ grid-area: pay; }
+#sub-form{
+  grid-template-areas:
+    "name name"
+    "amount due"
+    "kind kind"
+    "status status"
+    "pay pay"
+    "notes notes"
+    "actions actions";
+}
+#save-form{
+  grid-template-areas:
+    "name name"
+    "amount amount"
+    "kind kind"
+    "status status"
+    "notes notes"
+    "actions actions";
+}
 .f-notes{ grid-area: notes; }
 .debt-form-actions{
   grid-area: actions;
@@ -1847,6 +1901,8 @@ html[data-theme="light"] .cat-chip{ color: color-mix(in srgb, var(--c) 78%, #0f1
 .tag.bad{ color: var(--money-out); background: rgba(248, 113, 113, .14); }
 .tag.good{ color: var(--money-in); background: rgba(52, 211, 153, .14); }
 .tag.next{ color: #60a5fa; background: rgba(96, 165, 250, .16); }
+.tag.card{ color: #93c5fd; background: rgba(96, 165, 250, .16); }
+html[data-theme="light"] .tag.card{ color: #1d4ed8; }
 .debt-item .row-actions{ justify-content: flex-start; align-items: center; }
 .pay-btn{
   flex: 1;
@@ -1969,7 +2025,7 @@ html[data-theme="light"] .cat-chip{ color: color-mix(in srgb, var(--c) 78%, #0f1
   right: var(--edge-right);
   bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-shift, 0px));
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 6px;
   border-radius: 22px;
@@ -2053,8 +2109,29 @@ html[data-theme="light"] .cat-chip{ color: color-mix(in srgb, var(--c) 78%, #0f1
     grid-template-columns: 1fr;
     grid-template-areas: "name" "amount" "due" "kind" "status" "notes" "actions";
   }
+  #save-form{
+    grid-template-areas: "name" "amount" "kind" "status" "notes" "actions";
+  }
+  #sub-form{
+    grid-template-areas: "name" "amount" "due" "kind" "status" "pay" "notes" "actions";
+  }
 }
 @media (min-width: 720px){
+  #save-form{
+    grid-template-areas:
+      "name name amount"
+      "kind status status"
+      "notes notes notes"
+      "actions actions actions";
+  }
+  #sub-form{
+    grid-template-areas:
+      "name amount due"
+      "kind status status"
+      "pay pay pay"
+      "notes notes notes"
+      "actions actions actions";
+  }
   .debt-form{
     grid-template-columns: 1.5fr .8fr .8fr;
     grid-template-areas:
@@ -2077,7 +2154,7 @@ html[data-theme="light"] .cat-chip{ color: color-mix(in srgb, var(--c) 78%, #0f1
   .tabbar{
     left: 50%;
     right: auto;
-    width: min(520px, calc(100% - 32px));
+    width: min(640px, calc(100% - 32px));
     transform: translateX(-50%);
   }
 }

@@ -18,6 +18,7 @@ const EXPENSE_CATS = [
   "Cuidados",
   "Impostos",
   "Trabalho",
+  "Dinheiro guardado",
   "Outros",
 ];
 const CAT_COLORS = {
@@ -40,7 +41,20 @@ const CAT_COLORS = {
   cuidados: "#f9a8d4",
   impostos: "#78716c",
   trabalho: "#64748b",
+  "dinheiro guardado": "#4ade80",
   outros: "#94a3b8",
+  "renda fixa": "#3b82f6",
+  acoes: "#34d399",
+  fundos: "#a78bfa",
+  tesouro: "#fbbf24",
+  cripto: "#fb923c",
+  previdencia: "#818cf8",
+  viagem: "#38bdf8",
+  casa: "#6366f1",
+  carro: "#fb7185",
+  estudos: "#c084fc",
+  presentes: "#f472b6",
+  emergencia: "#f87171",
 };
 const MONTHS_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTHS_LONG = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -69,6 +83,7 @@ const KEYWORDS = [
   [/pet|ração|racao|veterin/i, "Pets", "expense"],
   [/salão|salao|barbe|cabelo|estética|estetica/i, "Cuidados", "expense"],
   [/imposto|ipva|iptu|multa|darf/i, "Impostos", "expense"],
+  [/cofrinho|poupan[cç]a|dinheiro guardado/i, "Dinheiro guardado", "expense"],
   [/reembolso/i, "Reembolso", "income"],
   [/benef[ií]cio|vale|13º|13o|f[eé]rias|plr/i, "Benefícios", "income"],
 ];
@@ -321,6 +336,7 @@ let previewSettings = { charts: { flow: true, category: true, mix: true, daily: 
 let previewTelegram = { linked: false };
 let previewDebts = [];
 let previewSubs = [];
+let previewSavings = [];
 
 function seedPreviewDebts() {
   if (previewDebts.length) return;
@@ -341,12 +357,24 @@ function seedPreviewSubs() {
   if (previewSubs.length) return;
   const next = `${shiftMonth(today().slice(0, 7), 1)}-08`;
   previewSubs = [
-    { id: ++previewSeq, name: "Netflix", cycle: "monthly", amount: 55.9, due_date: shiftDay(today(), 2), notes: "Plano padrão", active: true },
+    { id: ++previewSeq, name: "Netflix", cycle: "monthly", amount: 55.9, due_date: shiftDay(today(), 2), notes: "Plano padrão", active: true, pay_with: "card" },
     { id: ++previewSeq, name: "Academia", cycle: "monthly", amount: 129.9, due_date: shiftDay(today(), -6), notes: "", active: true },
     { id: ++previewSeq, name: "iCloud", cycle: "yearly", amount: 149.9, due_date: next, notes: "200 GB", active: true },
     { id: ++previewSeq, name: "Seguro do carro", cycle: "yearly", amount: 890, due_date: `${shiftMonth(today().slice(0, 7), 3)}-20`, notes: "", active: true },
     { id: ++previewSeq, name: "Domínio", cycle: "yearly", amount: 60, due_date: `${shiftMonth(today().slice(0, 7), 4)}-05`, notes: "", active: true },
     { id: ++previewSeq, name: "Spotify", cycle: "monthly", amount: 21.9, due_date: shiftDay(today(), -20), notes: "", active: false },
+  ];
+}
+
+function seedPreviewSavings() {
+  if (previewSavings.length) return;
+  previewSavings = [
+    { id: ++previewSeq, name: "CDB do banco", kind: "investment", category: "Renda fixa", amount: 8000, notes: "Liquidez diária" },
+    { id: ++previewSeq, name: "Tesouro Selic", kind: "investment", category: "Tesouro", amount: 4500, notes: "" },
+    { id: ++previewSeq, name: "Ações na corretora", kind: "investment", category: "Ações", amount: 2300, notes: "" },
+    { id: ++previewSeq, name: "Reserva de emergência", kind: "piggy", category: "Emergência", amount: 3000, notes: "6 meses" },
+    { id: ++previewSeq, name: "Viagem de fim de ano", kind: "piggy", category: "Viagem", amount: 1200, notes: "" },
+    { id: ++previewSeq, name: "Presente", kind: "piggy", category: "Presentes", amount: 250, notes: "" },
   ];
 }
 
@@ -468,6 +496,8 @@ function previewApi(method, url, body) {
         due_date: body.due_date || null,
         notes: body.notes || "",
         active: body.active !== false,
+        pay_with: body.pay_with === "card" ? "card" : "other",
+        billed_due: body.billed_due || null,
       };
       previewSubs.unshift(created);
       return { ...created };
@@ -478,6 +508,30 @@ function previewApi(method, url, body) {
       return { ...previewSubs[index] };
     }
     if (method === "DELETE" && index >= 0) previewSubs.splice(index, 1);
+    return {};
+  }
+  if (url === "/savings" || url.startsWith("/savings/")) {
+    seedPreviewSavings();
+    const id = url.split("/")[2];
+    if (method === "GET") return previewSavings.map((item) => ({ ...item }));
+    if (method === "POST") {
+      const created = {
+        id: ++previewSeq,
+        name: body.name,
+        kind: body.kind || "investment",
+        category: body.category,
+        amount: body.amount,
+        notes: body.notes || "",
+      };
+      previewSavings.unshift(created);
+      return { ...created };
+    }
+    const index = previewSavings.findIndex((item) => String(item.id) === id);
+    if (method === "PUT" && index >= 0) {
+      previewSavings[index] = { ...previewSavings[index], ...body };
+      return { ...previewSavings[index] };
+    }
+    if (method === "DELETE" && index >= 0) previewSavings.splice(index, 1);
     return {};
   }
   const id = url.split("/")[2];
@@ -892,9 +946,29 @@ editForm?.addEventListener("submit", async (e) => {
   if (!description) return toast("Informe uma descrição", "error");
   if (Number.isNaN(amount)) return toast("Valor inválido. Use por exemplo 49,90", "error");
   const body = txBody({ description, amount, type: editTypeValue, select: editCategory, date: editDate.value });
+  const previous = editingTransaction;
+  let added = 0;
+  if (body.type === "expense" && isSavedMoney(body.category)) {
+    const same = previous.type === "expense" && isSavedMoney(inferCategory(previous));
+    added = same ? Math.max(0, amount - Number(previous.amount)) : amount;
+  }
+  let mirror = false;
+  if (!linkingSaved && added > 0.009) {
+    const choice = await askMirrorSaved(description, Math.round(added * 100) / 100, true);
+    if (choice === null) return;
+    mirror = choice === true;
+  }
   try {
-    await api("PUT", `/transactions/${editingTransaction.id}`, body);
-    saveCategory(editingTransaction.id, body.category);
+    await api("PUT", `/transactions/${previous.id}`, body);
+    saveCategory(previous.id, body.category);
+    if (mirror) {
+      linkingSaved = true;
+      try {
+        await putSavedFromExpense(description, Math.round(added * 100) / 100);
+      } finally {
+        linkingSaved = false;
+      }
+    }
     closeEditModal();
     toast("Lançamento atualizado");
     loadTransactions();
@@ -1760,6 +1834,61 @@ statementFile?.addEventListener("change", async () => {
   }
 });
 
+const SAVED_MONEY = "Dinheiro guardado";
+let linkingSaved = false;
+
+function isSavedMoney(name) {
+  return catKey(name) === catKey(SAVED_MONEY);
+}
+
+function askMirrorSaved(description, amount, toSaved) {
+  return askDialog({
+    title: toSaved ? "Colocar em Guardado?" : "Lançar como despesa?",
+    text: toSaved
+      ? `Adicionar ${money(amount)} de ${description} na aba Guardado?`
+      : `Lançar ${money(amount)} de ${description} como despesa em Dinheiro guardado?`,
+    okLabel: toSaved ? "Sim, guardar" : "Sim, lançar",
+    cancelLabel: "Não",
+  });
+}
+
+async function putSavedFromExpense(description, amount) {
+  const current = savings.find(
+    (item) => item.kind === "piggy" && isSavedMoney(item.category) && catKey(item.name) === catKey(description)
+  );
+  if (current) {
+    await api("PUT", `/savings/${current.id}`, {
+      name: current.name,
+      amount: Math.round((Number(current.amount) + amount) * 100) / 100,
+      kind: current.kind,
+      category: current.category,
+      notes: current.notes || "",
+    });
+  } else {
+    await api("POST", "/savings", {
+      name: description,
+      amount,
+      kind: "piggy",
+      category: SAVED_MONEY,
+      notes: "",
+    });
+  }
+  await loadSavings();
+}
+
+async function putExpenseFromSaved(name, amount) {
+  const created = await api("POST", "/transactions", {
+    description: name,
+    amount,
+    type: "expense",
+    category: SAVED_MONEY,
+    date: today(),
+  });
+  if (created?.id) saveCategory(created.id, SAVED_MONEY);
+  chartsNeedDraw = true;
+  await loadTransactions();
+}
+
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const description = descriptionInput.value.trim();
@@ -1770,11 +1899,25 @@ form?.addEventListener("submit", async (e) => {
     return toast("Valor inválido. Use por exemplo 49,90", "error");
   }
   const body = txBody({ description, amount, type: typeInput.value, select: categorySelect, date: dateInput.value || today() });
+  let mirror = false;
+  if (!linkingSaved && body.type === "expense" && isSavedMoney(body.category) && amount > 0) {
+    const choice = await askMirrorSaved(description, amount, true);
+    if (choice === null) return;
+    mirror = choice === true;
+  }
   submitBtn.disabled = true;
   submitBtn.textContent = "Salvando…";
   try {
     const created = await api("POST", "/transactions", body);
     if (created?.id) saveCategory(created.id, body.category);
+    if (mirror) {
+      linkingSaved = true;
+      try {
+        await putSavedFromExpense(description, amount);
+      } finally {
+        linkingSaved = false;
+      }
+    }
     descriptionInput.value = "";
     amountInput.value = "";
     categoryTouched = false;
@@ -1798,7 +1941,7 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------- menu, dívidas e ajustes ---------- */
 
-const VIEWS = new Set(["home", "debts", "subs", "settings"]);
+const VIEWS = new Set(["home", "debts", "subs", "savings", "settings"]);
 let debts = [];
 let editingDebtId = null;
 
@@ -2349,6 +2492,15 @@ function setSubCycle(cycle) {
   });
 }
 
+function setSubPay(pay) {
+  const input = document.getElementById("sub-pay");
+  const value = pay === "card" ? "card" : "other";
+  if (input) input.value = value;
+  document.querySelectorAll("#sub-form [data-pay]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.pay === value);
+  });
+}
+
 function setSubActive(active) {
   const input = document.getElementById("sub-active");
   if (input) input.value = active ? "1" : "0";
@@ -2362,6 +2514,7 @@ function resetSubForm() {
   subForm?.reset();
   setSubCycle("monthly");
   setSubActive(true);
+  setSubPay("other");
   if (subSubmit) subSubmit.textContent = "Adicionar assinatura";
   subCancel?.classList.add("hidden");
 }
@@ -2388,6 +2541,8 @@ function subPayloadFrom(sub, extra = {}) {
     due_date: extra.due_date !== undefined ? extra.due_date : subDay(sub),
     notes: extra.notes !== undefined ? extra.notes : (sub.notes || ""),
     active: extra.active !== undefined ? extra.active : sub.active !== false,
+    pay_with: extra.pay_with ?? (sub.pay_with === "card" ? "card" : "other"),
+    billed_due: extra.billed_due !== undefined ? extra.billed_due : (sub.billed_due ? String(sub.billed_due).slice(0, 10) : ""),
   };
 }
 
@@ -2415,6 +2570,10 @@ function subCard(sub, bucket) {
   cycle.className = "tag";
   cycle.textContent = SUB_CYCLES[sub.cycle] || "Mensal";
   tags.appendChild(cycle);
+  const pay = document.createElement("span");
+  pay.className = sub.pay_with === "card" ? "tag card" : "tag";
+  pay.textContent = sub.pay_with === "card" ? "Cartão" : "Outro";
+  tags.appendChild(pay);
   if (info) {
     const tag = document.createElement("span");
     tag.className = `tag ${info.tone}`.trim();
@@ -2516,16 +2675,110 @@ async function addSubExpense(sub) {
   await loadTransactions();
 }
 
+function invoiceName(month) {
+  return `Fatura do cartão ${month.slice(5)}/${month.slice(0, 4)}`;
+}
+
+function chargeMonth(sub) {
+  const day = subDay(sub);
+  return day ? day.slice(0, 7) : shiftMonth(today().slice(0, 7), 1);
+}
+
+function nextInvoiceTarget(sub) {
+  const month = chargeMonth(sub);
+  const open = debts.filter((debt) => debt.kind === "credit_card" && !debt.paid_at);
+  const invoices = open.filter((debt) => /fatura/i.test(debt.name));
+  const pool = invoices.length ? invoices : open;
+  const named = pool.find((debt) => debt.name === invoiceName(month));
+  if (named) return { debt: named, month, fresh: false };
+  const upcoming = [...pool].sort((a, b) => (debtDay(a) || "9999").localeCompare(debtDay(b) || "9999"));
+  const pick = upcoming.find((debt) => !debtDay(debt) || debtDay(debt) >= today()) || upcoming[0];
+  if (pick) return { debt: pick, month: debtDay(pick).slice(0, 7) || month, fresh: false };
+  return { debt: null, month, fresh: true };
+}
+
+function cycleBilled(sub, due) {
+  return Boolean(due) && String(sub?.billed_due || "").slice(0, 10) === due && sub?.pay_with === "card";
+}
+
+function invoicePhrase(month) {
+  const name = MONTHS_LONG[Number(month.slice(5)) - 1] || month;
+  return `${name.toLowerCase()} de ${month.slice(0, 4)}`;
+}
+
+function askOnInvoice(sub, target) {
+  const phrase = invoicePhrase(target.month);
+  const label = target.debt?.name || "próxima fatura";
+  const text = target.fresh
+    ? `Criar a fatura de ${phrase} com ${money(sub.amount)} de ${sub.name}?`
+    : `Adicionar ${money(sub.amount)} de ${sub.name} na ${label} de ${phrase}?`;
+  return askDialog({
+    title: "Colocar na fatura?",
+    text,
+    okLabel: "Sim, colocar",
+    cancelLabel: "Não",
+  });
+}
+
+async function addSubToInvoice(sub) {
+  if (!debts.length) {
+    try {
+      debts = await api("GET", "/debts");
+    } catch {
+      debts = [];
+    }
+  }
+  const target = nextInvoiceTarget(sub);
+  const amount = Math.round(Number(sub.amount) * 100) / 100;
+  if (target.debt) {
+    const nextAmount = Math.round((Number(target.debt.amount) + amount) * 100) / 100;
+    await api("PUT", `/debts/${target.debt.id}`, debtPayloadFrom({ ...target.debt, amount: nextAmount }, false));
+    return target.debt.name;
+  }
+  const name = invoiceName(target.month);
+  await api("POST", "/debts", {
+    name,
+    kind: "credit_card",
+    amount,
+    due_date: subDay(sub) || `${target.month}-10`,
+    notes: sub.name,
+    paid: false,
+  });
+  return name;
+}
+
 async function registerSubPayment(sub) {
-  const choice = await askPaidOnPanel(sub);
-  if (choice === null) return;
+  const card = sub.pay_with === "card";
+  const due = subDay(sub);
+  let onInvoice = false;
+  let onPanel = false;
+  if (card) {
+    if (!cycleBilled(sub, due)) {
+      const choice = await askOnInvoice(sub, nextInvoiceTarget(sub));
+      if (choice === null) return;
+      onInvoice = choice === true;
+    }
+  } else {
+    const choice = await askPaidOnPanel(sub);
+    if (choice === null) return;
+    onPanel = choice === true;
+  }
   const nextDue = addCycle(sub.due_date, sub.cycle);
   try {
-    await api("PUT", `/subscriptions/${sub.id}`, subPayloadFrom(sub, { due_date: nextDue, active: true }));
-    if (choice) await addSubExpense(sub);
+    let invoiceNameUsed = "";
+    if (onInvoice) invoiceNameUsed = await addSubToInvoice(sub);
+    await api("PUT", `/subscriptions/${sub.id}`, subPayloadFrom(sub, {
+      due_date: nextDue,
+      active: true,
+      billed_due: card ? due : "",
+    }));
+    if (onPanel) await addSubExpense(sub);
     await loadSubscriptions();
+    if (onInvoice) await loadDebts();
     const when = formatDate(nextDue);
-    toast(choice ? `Paga e lançada no painel. Próxima em ${when}` : `Cobrança marcada como paga. Próxima em ${when}`);
+    if (onInvoice) toast(`Paga e somada em ${invoiceNameUsed}. Próxima em ${when}`);
+    else if (onPanel) toast(`Paga e lançada no painel. Próxima em ${when}`);
+    else toast(`Cobrança marcada como paga. Próxima em ${when}`);
   } catch (err) {
     toast(err.message, "error");
   }
@@ -2570,6 +2823,7 @@ function startEditSub(sub) {
   subNotes.value = sub.notes || "";
   setSubCycle(SUB_CYCLES[sub.cycle] ? sub.cycle : "monthly");
   setSubActive(sub.active !== false);
+  setSubPay(sub.pay_with);
   subSubmit.textContent = "Salvar";
   subCancel.classList.remove("hidden");
   subForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2583,6 +2837,9 @@ function bindSubscriptions() {
   document.querySelectorAll("#sub-form [data-active]").forEach((btn) => {
     btn.addEventListener("click", () => setSubActive(btn.dataset.active === "1"));
   });
+  document.querySelectorAll("#sub-form [data-pay]").forEach((btn) => {
+    btn.addEventListener("click", () => setSubPay(btn.dataset.pay));
+  });
   subCancel?.addEventListener("click", resetSubForm);
   subForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -2593,19 +2850,33 @@ function bindSubscriptions() {
       subAmount.focus();
       return toast("Valor inválido. Use por exemplo 49,90", "error");
     }
+    const previous = subscriptions.find((item) => item.id === editingSubId);
+    const payWith = document.getElementById("sub-pay")?.value === "card" ? "card" : "other";
+    const active = document.getElementById("sub-active")?.value !== "0";
+    let onInvoice = false;
+    if (payWith === "card" && active && !cycleBilled({ ...previous, pay_with: "card" }, subDue.value)) {
+      const choice = await askOnInvoice({ name, amount, due_date: subDue.value }, nextInvoiceTarget({ due_date: subDue.value, amount, name }));
+      if (choice === null) return;
+      onInvoice = choice === true;
+    }
     const body = {
       name,
       amount,
       due_date: subDue.value,
       cycle: subCycle.value || "monthly",
       notes: subNotes.value.trim(),
-      active: document.getElementById("sub-active")?.value !== "0",
+      active,
+      pay_with: payWith,
+      billed_due: onInvoice ? subDue.value : (payWith === "card" ? (previous?.billed_due || "") : ""),
     };
     subSubmit.disabled = true;
     try {
+      let invoiceNameUsed = "";
+      if (onInvoice) invoiceNameUsed = await addSubToInvoice({ name, amount, due_date: subDue.value });
       if (editingSubId) await api("PUT", `/subscriptions/${editingSubId}`, body);
       else await api("POST", "/subscriptions", body);
-      toast(editingSubId ? "Assinatura atualizada" : "Assinatura adicionada");
+      if (onInvoice) await loadDebts();
+      toast(onInvoice ? `Assinatura salva e somada em ${invoiceNameUsed}` : editingSubId ? "Assinatura atualizada" : "Assinatura adicionada");
       resetSubForm();
       await loadSubscriptions();
     } catch (err) {
@@ -2679,6 +2950,257 @@ function bindTelegram() {
   });
 }
 
+const SAVE_CATS = {
+  investment: ["Renda fixa", "Ações", "Fundos", "Tesouro", "Cripto", "Previdência", "Outros"],
+  piggy: ["Viagem", "Casa", "Carro", "Estudos", "Presentes", "Emergência", "Dinheiro guardado", "Outros"],
+};
+let savings = [];
+let editingSaveId = null;
+
+const saveForm = document.getElementById("save-form");
+const saveName = document.getElementById("save-name");
+const saveAmount = document.getElementById("save-amount");
+const saveKind = document.getElementById("save-kind");
+const saveCategorySelect = document.getElementById("save-category");
+const saveNotes = document.getElementById("save-notes");
+const saveSubmit = document.getElementById("save-submit");
+const saveCancel = document.getElementById("save-cancel");
+
+function fillSaveCategory(kind, selected) {
+  if (!saveCategorySelect) return;
+  const cats = SAVE_CATS[kind] || SAVE_CATS.investment;
+  saveCategorySelect.innerHTML = cats.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+  if (selected && cats.includes(selected)) saveCategorySelect.value = selected;
+}
+
+function setSaveKind(kind) {
+  const next = SAVE_CATS[kind] ? kind : "investment";
+  if (saveKind) saveKind.value = next;
+  document.querySelectorAll("#save-form [data-save-kind]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.saveKind === next);
+  });
+  const current = saveCategorySelect?.selectedOptions[0]?.textContent;
+  fillSaveCategory(next, SAVE_CATS[next].includes(current) ? current : SAVE_CATS[next][0]);
+}
+
+function resetSaveForm() {
+  editingSaveId = null;
+  saveForm?.reset();
+  setSaveKind("investment");
+  if (saveSubmit) saveSubmit.textContent = "Adicionar";
+  saveCancel?.classList.add("hidden");
+}
+
+function savePayloadFrom(item) {
+  return {
+    name: item.name,
+    kind: item.kind,
+    category: item.category,
+    amount: Number(item.amount),
+    notes: item.notes || "",
+  };
+}
+
+function saveRow(item) {
+  const row = document.createElement("div");
+  row.className = "save-row";
+  const main = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "debt-title";
+  title.textContent = item.name;
+  main.appendChild(title);
+  if (item.notes) {
+    const meta = document.createElement("p");
+    meta.className = "debt-meta";
+    meta.textContent = item.notes;
+    main.appendChild(meta);
+  }
+  const amount = document.createElement("p");
+  amount.className = "debt-amount";
+  amount.textContent = money(item.amount);
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  actions.append(
+    debtAction(ICON.edit, "Editar", () => startEditSave(item)),
+    debtAction(ICON.trash, "Excluir", () => removeSave(item), "delete")
+  );
+  row.append(main, amount, actions);
+  return row;
+}
+
+function saveCategoryCard(category, items) {
+  const card = document.createElement("article");
+  card.className = "save-cat";
+  card.style.setProperty("--c", catColor(category));
+  const top = document.createElement("div");
+  top.className = "save-cat-top";
+  const title = document.createElement("h3");
+  title.textContent = category;
+  const sum = document.createElement("p");
+  sum.textContent = money(sumDebts(items));
+  top.append(title, sum);
+  const list = document.createElement("div");
+  list.className = "save-items";
+  list.append(...items.map(saveRow));
+  card.append(top, list);
+  return card;
+}
+
+function renderSaveKind(kind, title) {
+  const items = savings.filter((item) => item.kind === kind);
+  if (!items.length) return null;
+  const section = document.createElement("div");
+  section.className = "sheet-card debt-group";
+  const header = document.createElement("div");
+  header.className = "chart-header";
+  const heading = document.createElement("h2");
+  heading.textContent = title;
+  const sum = document.createElement("span");
+  sum.className = "muted";
+  sum.textContent = money(sumDebts(items));
+  header.append(heading, sum);
+  const grid = document.createElement("div");
+  grid.className = "save-items";
+  const order = SAVE_CATS[kind];
+  const names = [...new Set(items.map((item) => item.category))];
+  names.sort((a, b) => {
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+  names.forEach((category) => {
+    grid.appendChild(saveCategoryCard(category, items.filter((item) => item.category === category)));
+  });
+  section.append(header, grid);
+  return section;
+}
+
+function renderSavings() {
+  const invest = savings.filter((item) => item.kind === "investment");
+  const piggy = savings.filter((item) => item.kind === "piggy");
+  const totalEl = document.getElementById("save-total");
+  const totalHint = document.getElementById("save-total-hint");
+  const investEl = document.getElementById("save-invest");
+  const investHint = document.getElementById("save-invest-hint");
+  const piggyEl = document.getElementById("save-piggy");
+  const piggyHint = document.getElementById("save-piggy-hint");
+  const empty = document.getElementById("save-empty");
+  const host = document.getElementById("save-groups");
+  if (totalEl) totalEl.textContent = money(sumDebts(savings));
+  if (totalHint) totalHint.textContent = savings.length === 1 ? "1 item" : savings.length ? `${savings.length} itens` : "Nada guardado";
+  if (investEl) investEl.textContent = money(sumDebts(invest));
+  if (investHint) {
+    const cats = new Set(invest.map((item) => item.category)).size;
+    investHint.textContent = invest.length ? `${cats} categoria${cats === 1 ? "" : "s"}` : "Nenhum investimento";
+  }
+  if (piggyEl) piggyEl.textContent = money(sumDebts(piggy));
+  if (piggyHint) {
+    const cats = new Set(piggy.map((item) => item.category)).size;
+    piggyHint.textContent = piggy.length ? `${cats} categoria${cats === 1 ? "" : "s"}` : "Nenhum cofrinho";
+  }
+  if (empty) empty.hidden = savings.length > 0;
+  if (host) {
+    host.replaceChildren(...[renderSaveKind("investment", "Investimentos"), renderSaveKind("piggy", "Cofrinhos")].filter(Boolean));
+  }
+}
+
+async function loadSavings() {
+  try {
+    savings = await api("GET", "/savings");
+  } catch (err) {
+    savings = [];
+    toast(err.message, "error");
+  }
+  renderSavings();
+}
+
+async function removeSave(item) {
+  try {
+    await api("DELETE", `/savings/${item.id}`);
+    if (editingSaveId === item.id) resetSaveForm();
+    await loadSavings();
+    toast(`"${item.name}" excluído`, "info", {
+      label: "Desfazer",
+      run: async () => {
+        try {
+          await api("POST", "/savings", savePayloadFrom(item));
+          await loadSavings();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      },
+    });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function startEditSave(item) {
+  editingSaveId = item.id;
+  saveName.value = item.name;
+  saveAmount.value = Number(item.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  saveNotes.value = item.notes || "";
+  setSaveKind(item.kind);
+  fillSaveCategory(item.kind, item.category);
+  saveSubmit.textContent = "Salvar";
+  saveCancel.classList.remove("hidden");
+  saveForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  saveName.focus();
+}
+
+function bindSavings() {
+  document.querySelectorAll("#save-form [data-save-kind]").forEach((btn) => {
+    btn.addEventListener("click", () => setSaveKind(btn.dataset.saveKind));
+  });
+  saveCancel?.addEventListener("click", resetSaveForm);
+  setSaveKind("investment");
+  saveForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = saveName.value.trim();
+    const amount = parseAmount(saveAmount.value);
+    if (!name) return toast("Informe o nome", "error");
+    if (Number.isNaN(amount)) {
+      saveAmount.focus();
+      return toast("Valor inválido. Use por exemplo 49,90", "error");
+    }
+    const body = {
+      name,
+      amount,
+      kind: saveKind.value || "investment",
+      category: saveCategorySelect.value,
+      notes: saveNotes.value.trim(),
+    };
+    const previous = editingSaveId ? savings.find((item) => item.id === editingSaveId) : null;
+    const added = previous ? Math.max(0, amount - Number(previous.amount)) : amount;
+    let mirror = false;
+    if (!linkingSaved && added > 0.009) {
+      const choice = await askMirrorSaved(name, Math.round(added * 100) / 100, false);
+      if (choice === null) return;
+      mirror = choice === true;
+    }
+    saveSubmit.disabled = true;
+    try {
+      if (editingSaveId) await api("PUT", `/savings/${editingSaveId}`, body);
+      else await api("POST", "/savings", body);
+      if (mirror) {
+        linkingSaved = true;
+        try {
+          await putExpenseFromSaved(name, Math.round(added * 100) / 100);
+        } finally {
+          linkingSaved = false;
+        }
+      }
+      toast(editingSaveId ? "Atualizado" : "Adicionado");
+      resetSaveForm();
+      await loadSavings();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      saveSubmit.disabled = false;
+    }
+  });
+}
+
 (async function init() {
   enhanceControls();
   buildChartPrefs();
@@ -2686,6 +3208,7 @@ function bindTelegram() {
   bindNavigation();
   bindDebts();
   bindSubscriptions();
+  bindSavings();
   bindTelegram();
   const start = viewFromHash();
   if (start !== "home") showView(start, false);
@@ -2693,7 +3216,7 @@ function bindTelegram() {
   if (!document.getElementById("view-home")?.hidden) renderDashboard();
   await loadCategories();
   await loadSettings();
-  await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions()]);
+  await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions(), loadSavings()]);
 })();
 
 /* ---------- controles customizados ---------- */
@@ -2867,6 +3390,7 @@ function enhanceControls() {
   enhanceSelect(typeFilter);
   enhanceSelect(editCategory, { colorize: true });
   enhanceSelect(chartMode);
+  enhanceSelect(saveCategorySelect, { colorize: true });
   enhanceSelect(mobileSort);
   enhanceMonth(monthFilter);
 }

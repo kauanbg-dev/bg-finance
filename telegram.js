@@ -94,6 +94,7 @@ function categoryName(raw, type) {
   if (/lazer|cinema|entreten/.test(text)) return 'Lazer';
   if (/educa|curso|escola/.test(text)) return 'Educação';
   if (/trabalho/.test(text)) return 'Trabalho';
+  if (/cofrinho|poupanca|dinheiro guardado/.test(text)) return 'Dinheiro guardado';
   if (type === 'income' && /salario|holerite/.test(text)) return 'Salário';
   if (type === 'income' && /freelance/.test(text)) return 'Freelance';
   if (type === 'income' && /invest|rendimento|dividendo/.test(text)) return 'Investimentos';
