@@ -359,13 +359,17 @@ let previewSavings = [];
 
 function seedPreviewDebts() {
   if (previewDebts.length) return;
+  seedPreviewCards();
   const soon = shiftDay(today(), 3);
   const late = shiftDay(today(), -4);
   const next = `${shiftMonth(today().slice(0, 7), 1)}-12`;
+  const nubank = previewCards.find((card) => card.last4 === "4532");
+  const itau = previewCards.find((card) => card.last4 === "8811");
+  const openOf = (card) => Math.round(card.charges.filter((charge) => !charge.paid_at).reduce((sum, charge) => sum + Number(charge.amount), 0) * 100) / 100;
   previewDebts = [
-    { id: ++previewSeq, name: "Cartão de crédito", kind: "credit_card", amount: 842.3, due_date: soon, notes: "Fatura do mês", paid_at: null },
+    { id: ++previewSeq, name: "Fatura Nubank", kind: "credit_card", card_id: nubank.id, amount: openOf(nubank), due_date: soon, notes: "Fatura do mês", paid_at: null },
     { id: ++previewSeq, name: "Empréstimo pessoal", kind: "loan", amount: 3200, due_date: late, notes: "Parcela 4 de 12", paid_at: null },
-    { id: ++previewSeq, name: "Fatura do cartão", kind: "credit_card", amount: 960, due_date: next, notes: "Fecha no mês que vem", paid_at: null },
+    { id: ++previewSeq, name: "Fatura Itaú", kind: "credit_card", card_id: itau.id, amount: openOf(itau), due_date: next, notes: "Fecha no mês que vem", paid_at: null },
     { id: ++previewSeq, name: "IPVA", kind: "other", amount: 480, due_date: `${shiftMonth(today().slice(0, 7), 3)}-15`, notes: "Parcela 1", paid_at: null },
     { id: ++previewSeq, name: "Material da escola", kind: "other", amount: 320, due_date: `${shiftMonth(today().slice(0, 7), 4)}-10`, notes: "", paid_at: null },
     { id: ++previewSeq, name: "Parcela antiga", kind: "loan", amount: 400, due_date: shiftDay(today(), -40), notes: "", paid_at: new Date().toISOString() },
@@ -400,6 +404,40 @@ function previewPiggy(name, category, notes, deposits) {
     entries,
     amount: Math.round(entries.reduce((sum, entry) => sum + entry.amount, 0) * 100) / 100,
   };
+}
+
+let previewCards = [];
+
+function seedPreviewCards() {
+  if (previewCards.length) return;
+  const paid = new Date().toISOString();
+  const nubank = ++previewSeq;
+  const itau = ++previewSeq;
+  previewCards = [
+    {
+      id: nubank,
+      issuer: "Nubank",
+      brand: "mastercard",
+      last4: "4532",
+      credit_limit: 8000,
+      charges: [
+        { id: ++previewSeq, card_id: nubank, description: "Mercado", amount: 186.4, spent_at: shiftDay(today(), -2), paid_at: null },
+        { id: ++previewSeq, card_id: nubank, description: "Posto", amount: 220, spent_at: shiftDay(today(), -6), paid_at: null },
+        { id: ++previewSeq, card_id: nubank, description: "Farmácia", amount: 64.9, spent_at: shiftDay(today(), -12), paid_at: paid },
+      ],
+    },
+    {
+      id: itau,
+      issuer: "Itaú",
+      brand: "visa",
+      last4: "8811",
+      credit_limit: 5000,
+      charges: [
+        { id: ++previewSeq, card_id: itau, description: "Restaurante", amount: 92, spent_at: shiftDay(today(), -1), paid_at: null },
+        { id: ++previewSeq, card_id: itau, description: "Uber", amount: 34.5, spent_at: shiftDay(today(), -9), paid_at: paid },
+      ],
+    },
+  ];
 }
 
 function seedPreviewSavings() {
@@ -497,6 +535,109 @@ function previewApi(method, url, body) {
       }
     }
     return { added, skipped, debts: invoices.size };
+  }
+  if (url === "/cards" || url.startsWith("/cards/")) {
+    seedPreviewCards();
+    const parts = url.split("/").filter(Boolean);
+    const card = previewCards.find((item) => String(item.id) === String(parts[1]));
+    if (method === "GET" && parts.length === 1) {
+      return previewCards.map((item) => ({ ...item, charges: item.charges.map((charge) => ({ ...charge })) }));
+    }
+    if (method === "POST" && parts.length === 1) {
+      const created = {
+        id: ++previewSeq,
+        issuer: body.issuer,
+        brand: body.brand,
+        last4: String(body.last4 || "").replace(/\D/g, "").slice(0, 4),
+        credit_limit: Number(body.credit_limit),
+        charges: [],
+      };
+      previewCards.unshift(created);
+      return { ...created, charges: [] };
+    }
+    if (!card) return {};
+    if (method === "POST" && parts[2] === "settle") {
+      const amount = Number(body.amount);
+      const paying = body.paid === true;
+      let left = amount;
+      const list = (paying
+        ? card.charges.filter((charge) => !charge.paid_at)
+        : card.charges.filter((charge) => charge.paid_at)
+      ).sort((a, b) => {
+        if (paying) return String(a.spent_at).localeCompare(String(b.spent_at)) || a.id - b.id;
+        return String(b.paid_at).localeCompare(String(a.paid_at)) || b.id - a.id;
+      });
+      let settled = 0;
+      for (const charge of list) {
+        const value = Number(charge.amount);
+        if (value - left > 0.009) break;
+        charge.paid_at = paying ? new Date().toISOString() : null;
+        left -= value;
+        settled += 1;
+      }
+      return { settled, amount: Math.round((amount - left) * 100) / 100 };
+    }
+    if (method === "PUT" && parts.length === 2) {
+      Object.assign(card, {
+        issuer: body.issuer,
+        brand: body.brand,
+        last4: String(body.last4 || "").replace(/\D/g, "").slice(0, 4),
+        credit_limit: Number(body.credit_limit),
+      });
+      return { ...card, charges: card.charges.map((charge) => ({ ...charge })) };
+    }
+    if (method === "DELETE" && parts.length === 2) {
+      previewCards = previewCards.filter((item) => item !== card);
+      return { deleted: 1 };
+    }
+    if (method === "POST" && parts[2] === "settle") {
+      const amount = Number(body.amount);
+      const paying = body.paid === true;
+      let left = amount;
+      const list = (paying
+        ? card.charges.filter((charge) => !charge.paid_at)
+        : card.charges.filter((charge) => charge.paid_at)
+      ).sort((a, b) => {
+        if (paying) return String(a.spent_at).localeCompare(String(b.spent_at)) || a.id - b.id;
+        return String(b.paid_at).localeCompare(String(a.paid_at)) || b.id - a.id;
+      });
+      let settled = 0;
+      for (const charge of list) {
+        const value = Number(charge.amount);
+        if (value - left > 0.009) break;
+        charge.paid_at = paying ? new Date().toISOString() : null;
+        left -= value;
+        settled += 1;
+      }
+      return { settled, amount: Math.round((amount - left) * 100) / 100 };
+    }
+    if (method === "POST" && parts[2] === "charges") {
+      const created = {
+        id: ++previewSeq,
+        card_id: card.id,
+        description: body.description,
+        amount: Number(body.amount),
+        spent_at: body.spent_at,
+        paid_at: body.paid ? new Date().toISOString() : null,
+      };
+      card.charges.unshift(created);
+      return { ...created };
+    }
+    const charge = card.charges.find((item) => String(item.id) === String(parts[3]));
+    if (method === "PUT" && charge) {
+      Object.assign(charge, {
+        description: body.description,
+        amount: Number(body.amount),
+        spent_at: body.spent_at,
+        paid_at: body.paid ? charge.paid_at || new Date().toISOString() : null,
+      });
+      return { ...charge };
+    }
+    if (method === "DELETE" && charge) {
+      card.charges = card.charges.filter((item) => item !== charge);
+      return { deleted: 1 };
+    }
+    return {};
   }
   if (url === "/debts" || url.startsWith("/debts/")) {
     seedPreviewDebts();
@@ -1186,34 +1327,131 @@ function renderTable(rows) {
   }
 
   tbody.innerHTML = "";
-  const remaining = sorted.length - visibleCount;
+  const shown = sortKey === "date" ? renderDays(sorted, month) : renderFlat(sorted);
+  const remaining = sorted.length - shown;
   showMoreBtn.classList.toggle("hidden", remaining <= 0);
   showMoreBtn.textContent = `Mostrar mais · ${remaining} restante${remaining === 1 ? "" : "s"}`;
+}
+
+const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+function dayParts(iso) {
+  const [, monthNum, dayNum] = iso.split("-").map(Number);
+  const when = new Date(Number(iso.slice(0, 4)), monthNum - 1, dayNum);
+  const label = iso === today() ? "Hoje" : iso === shiftDay(today(), -1) ? "Ontem" : WEEKDAYS[when.getDay()];
+  return { num: pad(dayNum), label };
+}
+
+function appendSpanRow(className, fill) {
+  const head = document.createElement("tr");
+  head.className = className;
+  const cell = document.createElement("td");
+  cell.colSpan = 6;
+  fill(cell);
+  head.appendChild(cell);
+  tbody.appendChild(head);
+}
+
+function appendDayCard(iso, ordered) {
+  const parts = dayParts(iso);
+  appendSpanRow("day-card-row", (cell) => {
+    const card = document.createElement("div");
+    card.className = `day-card${ordered.length > 1 ? " multi" : ""}`;
+    const rail = document.createElement("div");
+    rail.className = "day-rail";
+    const num = document.createElement("span");
+    num.className = "day-num";
+    num.textContent = parts.num;
+    const label = document.createElement("span");
+    label.className = "day-label";
+    label.textContent = parts.label;
+    rail.append(num, label);
+    const list = document.createElement("div");
+    list.className = "day-items";
+    ordered.forEach((t, index) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "day-item";
+      if (index > 0 && t.type !== "income" && ordered[index - 1].type === "income") row.classList.add("day-split");
+      const desc = document.createElement("span");
+      desc.className = "day-item-desc";
+      desc.textContent = t.description;
+      const amt = document.createElement("span");
+      amt.className = `day-item-amt ${t.type === "income" ? "income" : "expense"}`;
+      amt.textContent = `${t.type === "expense" ? "− " : "+ "}${money(t.amount)}`;
+      row.append(desc, amt);
+      row.addEventListener("click", () => openEditModal(t));
+      list.appendChild(row);
+    });
+    card.append(rail, list);
+    cell.appendChild(card);
+  });
+}
+
+function renderDays(sorted, month) {
+  const byDay = new Map();
+  sorted.forEach((t) => {
+    const day = txDate(t);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(t);
+  });
+  let shown = 0;
   let lastMonth = "";
-  sorted.slice(0, visibleCount).forEach((t) => {
-    const rowMonth = txDate(t).slice(0, 7);
-    if (!month && sortKey === "date" && rowMonth !== lastMonth) {
+  for (const [day, items] of byDay) {
+    if (shown >= visibleCount) break;
+    const rowMonth = day.slice(0, 7);
+    if (!month && rowMonth !== lastMonth) {
       lastMonth = rowMonth;
-      const head = document.createElement("tr");
-      head.className = "month-row";
-      const cell = document.createElement("td");
-      cell.colSpan = 6;
-      cell.textContent = `${MONTHS_LONG[Number(rowMonth.slice(5)) - 1]} ${rowMonth.slice(0, 4)}`;
-      head.appendChild(cell);
-      tbody.appendChild(head);
+      appendSpanRow("month-row", (cell) => {
+        cell.textContent = `${MONTHS_LONG[Number(rowMonth.slice(5)) - 1]} ${rowMonth.slice(0, 4)}`;
+      });
     }
+    const incomes = items.filter((t) => t.type === "income");
+    const expenses = items.filter((t) => t.type !== "income");
+    const ordered = [...incomes, ...expenses];
+    appendDayCard(day, ordered);
+    ordered.forEach((t, index) => {
+      const classes = [];
+      if (index === 0) classes.push("day-start");
+      if (index === incomes.length && incomes.length && expenses.length) classes.push("day-split");
+      appendTxRow(t, true, classes, index === 0 ? ordered.length : -1);
+    });
+    shown += items.length;
+  }
+  return shown;
+}
+
+function renderFlat(sorted) {
+  sorted.slice(0, visibleCount).forEach((t) => appendTxRow(t, false));
+  return Math.min(sorted.length, visibleCount);
+}
+
+function appendTxRow(t, inDay, classes = [], dateSpan = 0) {
     const tr = document.createElement("tr");
+    if (inDay) tr.classList.add("in-day");
+    classes.forEach((name) => tr.classList.add(name));
     const category = inferCategory(t);
     const dateTd = document.createElement("td");
     dateTd.className = "date-cell";
     const [year, monthNum, dayNum] = txDate(t).split("-");
     const dateShort = document.createElement("span");
     dateShort.className = "date-short";
-    dateShort.textContent = `${dayNum}/${monthNum}`;
     const dateFull = document.createElement("span");
     dateFull.className = "date-full";
     dateFull.textContent = `${dayNum}/${monthNum}/${year}`;
-    dateTd.append(dateShort, dateFull);
+    if (inDay) {
+      const parts = dayParts(txDate(t));
+      dateShort.textContent = parts.num;
+      const weekday = document.createElement("span");
+      weekday.className = "date-wd";
+      weekday.textContent = parts.label;
+      dateTd.append(dateShort, weekday);
+      if (dateSpan > 1) dateTd.rowSpan = dateSpan;
+    } else {
+      dateShort.textContent = `${dayNum}/${monthNum}`;
+      dateTd.append(dateShort, dateFull);
+    }
+    if (dateSpan !== -1) tr.appendChild(dateTd);
     const descTd = document.createElement("td");
     descTd.className = "desc-cell";
     descTd.textContent = t.description;
@@ -1224,7 +1462,7 @@ function renderTable(rows) {
     chip.style.setProperty("--c", catColor(category));
     chip.textContent = category;
     catTd.appendChild(chip);
-    tr.append(dateTd, descTd, catTd);
+    tr.append(descTd, catTd);
     const typeTd = document.createElement("td");
     typeTd.className = "type-cell";
     const tag = document.createElement("span");
@@ -1265,7 +1503,6 @@ function renderTable(rows) {
       openEditModal(t);
     });
     tbody.appendChild(tr);
-  });
 }
 
 document.querySelectorAll(".sheet thead th[data-sort]").forEach((th) => {
@@ -1729,12 +1966,29 @@ function renderPivot(rows) {
     </table>`;
 }
 
+function chartsFoldOpen() {
+  return localStorage.getItem("bg-finance-fold-charts") === "open";
+}
+
+function applyChartsFold() {
+  const card = document.getElementById("charts-fold");
+  const btn = document.getElementById("charts-toggle");
+  const body = document.getElementById("charts-body");
+  if (!btn || !body) return;
+  const open = chartsFoldOpen();
+  card?.classList.toggle("is-collapsed", !open);
+  body.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.setAttribute("aria-label", open ? "Esconder gráficos" : "Mostrar gráficos");
+  btn.innerHTML = `${open ? ICON.eyeOff : ICON.eye}<span>${open ? "Esconder" : "Mostrar"}</span>`;
+}
+
 function renderDashboard() {
   const rows = filteredRows();
   const { income, expense } = totals(rows);
   renderCards(rows, income, expense);
   renderTable(rows);
-  updateCharts(rows, income, expense);
+  if (chartsFoldOpen()) updateCharts(rows, income, expense);
   renderPivot(rows);
 }
 
@@ -1758,6 +2012,7 @@ function demoTransactions() {
     add(ago, 21, "Curso online", 129.9, "expense", "Educação");
     add(ago, 24, "Cinema e jantar", 180 - ago * 30, "expense", "Lazer");
   });
+    add(0, 5, "Café", 18.5, "expense", "Alimentação");
     add(0, 3, "Farmácia", 74.5, "expense", "Saúde");
   add(0, 4, "Internet", 119.9, "expense", "Contas");
   add(0, 6, "Ração", 89, "expense", "Pets");
@@ -1828,6 +2083,13 @@ typeFilter?.addEventListener("change", onTypeFilter);
 categoryFilter?.addEventListener("change", onTypeFilter);
 searchFilter?.addEventListener("input", debounce(applyFilters, 200));
 paintFilterToggle();
+applyChartsFold();
+document.getElementById("charts-toggle")?.addEventListener("click", () => {
+  const open = chartsFoldOpen();
+  localStorage.setItem("bg-finance-fold-charts", open ? "closed" : "open");
+  applyChartsFold();
+  if (!open) renderDashboard();
+});
 chartMode?.addEventListener("change", renderDashboard);
 
 function stepMonth(delta) {
@@ -2160,6 +2422,8 @@ function closeOpenEntryForm() {
   else if (openForm.id === "debt-form") resetDebtForm();
   else if (openForm.id === "sub-form") resetSubForm();
   else if (openForm.id === "save-form") resetSaveForm();
+  else if (openForm.id === "card-form") closeEntryForm(openForm);
+  else if (openForm.id === "charge-form") closeEntryForm(openForm);
 }
 
 function bindEntryForms() {
@@ -2171,7 +2435,7 @@ function bindEntryForms() {
 
 /* ---------- menu, dívidas e ajustes ---------- */
 
-const VIEWS = new Set(["home", "debts", "subs", "savings", "settings"]);
+const VIEWS = new Set(["home", "debts", "subs", "savings", "settings", "cards"]);
 let debts = [];
 let editingDebtId = null;
 
@@ -2195,7 +2459,7 @@ function showView(name, scroll = true) {
     el.hidden = el.id !== `view-${name}`;
   });
   document.querySelectorAll(".nav-btn").forEach((btn) => {
-    const on = btn.dataset.view === name;
+    const on = btn.dataset.view === name || (name === "cards" && btn.dataset.view === "debts");
     btn.classList.toggle("is-active", on);
     if (on) btn.setAttribute("aria-current", "page");
     else btn.removeAttribute("aria-current");
@@ -2241,9 +2505,7 @@ function applyChartPrefs() {
     const card = document.querySelector(`[data-chart="${opt.id}"]`);
     if (card) card.hidden = chartPrefs[opt.id] === false;
   });
-  const grid = document.querySelector(".charts-grid");
   const note = document.getElementById("charts-off");
-  if (grid) grid.hidden = !anyOn;
   if (note) note.hidden = anyOn;
   if (document.getElementById("view-home")?.hidden) chartsNeedDraw = true;
   document.querySelectorAll("[data-chart-toggle]").forEach((input) => {
@@ -2300,8 +2562,18 @@ async function saveChartPref(id, on) {
   applyChartPrefs();
   if (!document.getElementById("view-home")?.hidden) renderDashboard();
   try {
-    const saved = await api("PUT", "/settings", { charts: { [id]: on } });
-    if (saved?.charts) chartPrefs = { ...chartPrefs, ...saved.charts };
+    const payload = {};
+    CHART_OPTIONS.forEach((opt) => {
+      payload[opt.id] = chartPrefs[opt.id] !== false;
+    });
+    const saved = await api("PUT", "/settings", { charts: payload });
+    if (saved?.charts) {
+      CHART_OPTIONS.forEach((opt) => {
+        if (typeof saved.charts[opt.id] === "boolean") chartPrefs[opt.id] = saved.charts[opt.id];
+      });
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: chartPrefs }));
+      applyChartPrefs();
+    }
   } catch (err) {
     chartPrefs = { ...chartPrefs, [id]: previous };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: chartPrefs }));
@@ -2316,6 +2588,28 @@ function setDebtKind(kind) {
   document.querySelectorAll("#debt-form [data-kind]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.kind === kind);
   });
+  syncDebtCardField();
+}
+
+function syncDebtCardField() {
+  const field = document.getElementById("debt-card-field");
+  const select = document.getElementById("debt-card");
+  const isCard = debtKind?.value === "credit_card";
+  if (field) field.hidden = !isCard;
+  if (!select || !isCard) return;
+  const current = select.value;
+  select.replaceChildren();
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = wallet.length ? "Escolher cartão" : "Nenhum cartão cadastrado";
+  select.appendChild(blank);
+  wallet.forEach((card) => {
+    const option = document.createElement("option");
+    option.value = String(card.id);
+    option.textContent = `${card.issuer} •••• ${card.last4}`;
+    select.appendChild(option);
+  });
+  if (wallet.some((card) => String(card.id) === current)) select.value = current;
 }
 
 function setDebtPaidFlag(paid) {
@@ -2414,6 +2708,13 @@ function debtCard(debt, bucket) {
   kind.className = "tag";
   kind.textContent = DEBT_KINDS[debt.kind] || "Outro";
   tags.appendChild(kind);
+  const linked = wallet.find((card) => String(card.id) === String(debt.card_id || ""));
+  if (linked) {
+    const cardTag = document.createElement("span");
+    cardTag.className = "tag";
+    cardTag.textContent = `${linked.issuer} •••• ${linked.last4}`;
+    tags.appendChild(cardTag);
+  }
   if (info) {
     const tag = document.createElement("span");
     tag.className = `tag ${info.tone}`.trim();
@@ -2700,7 +3001,29 @@ function debtPayloadFrom(debt, paid) {
     due_date: debt.due_date ? String(debt.due_date).slice(0, 10) : "",
     notes: debt.notes || "",
     paid,
+    card_id: debt.kind === "credit_card" ? debt.card_id || null : null,
   };
+}
+
+function linkedCardId(debt) {
+  if (!debt || debt.kind !== "credit_card") return null;
+  const id = Number(debt.card_id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+async function settleCardInvoice(cardId, amount, paid) {
+  if (!cardId) return 0;
+  const result = await api("POST", `/cards/${cardId}/settle`, { amount: Number(amount), paid });
+  await loadCards();
+  return Number(result?.settled || 0);
+}
+
+function paidDebtToast(paid, onPanel, settled) {
+  if (!paid) return settled ? "Dívida reaberta e limite do cartão de volta" : "Dívida reaberta";
+  if (onPanel && settled) return "Fatura paga, lançada no painel e limite liberado";
+  if (settled) return "Fatura paga e limite liberado";
+  if (onPanel) return "Paga e lançada no painel";
+  return "Dívida marcada como paga";
 }
 
 function askPaidOnPanel(debt) {
@@ -2733,9 +3056,10 @@ async function setDebtPaid(debt, paid) {
   }
   try {
     await api("PUT", `/debts/${debt.id}`, debtPayloadFrom(debt, paid));
+    const settled = await settleCardInvoice(linkedCardId(debt), debt.amount, paid);
     if (onPanel) await addDebtAsExpense(debt);
     await loadDebts();
-    toast(onPanel ? "Paga e lançada no painel" : paid ? "Dívida marcada como paga" : "Dívida reaberta");
+    toast(paidDebtToast(paid, onPanel, settled));
   } catch (err) {
     toast(err.message, "error");
   }
@@ -2769,6 +3093,9 @@ function startEditDebt(debt) {
   debtDue.value = debt.due_date ? String(debt.due_date).slice(0, 10) : "";
   debtNotes.value = debt.notes || "";
   setDebtKind(DEBT_KINDS[debt.kind] ? debt.kind : "other");
+  const cardSelect = document.getElementById("debt-card");
+  if (cardSelect) cardSelect.value = debt.card_id ? String(debt.card_id) : "";
+  cardSelect?.dispatchEvent(new Event("change"));
   setDebtPaidFlag(Boolean(debt.paid_at));
   debtSubmit.textContent = "Salvar";
   openEntryForm(debtForm, debtName);
@@ -2781,6 +3108,15 @@ function bindDebts() {
   document.querySelectorAll("#debt-form [data-paid]").forEach((btn) => {
     btn.addEventListener("click", () => setDebtPaidFlag(btn.dataset.paid === "1"));
   });
+  document.getElementById("debt-card")?.addEventListener("change", () => {
+    const card = wallet.find((item) => String(item.id) === document.getElementById("debt-card")?.value);
+    if (!card) return;
+    const open = card.charges.filter((charge) => !charge.paid_at).reduce((sum, charge) => sum + Number(charge.amount), 0);
+    if (!debtAmount.value.trim() && open > 0) {
+      debtAmount.value = open.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    if (!debtName.value.trim()) debtName.value = `Fatura ${card.issuer}`;
+  });
   debtCancel?.addEventListener("click", resetDebtForm);
   debtForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -2792,6 +3128,9 @@ function bindDebts() {
       return toast("Valor inválido. Use por exemplo 49,90", "error");
     }
     const paid = document.getElementById("debt-paid")?.value === "1";
+    const kind = debtKind.value || "credit_card";
+    const cardId = kind === "credit_card" ? Number(document.getElementById("debt-card")?.value) || null : null;
+    if (kind === "credit_card" && wallet.length && !cardId) return toast("Escolha o cartão dessa fatura", "error");
     const wasPaid = Boolean(debts.find((d) => d.id === editingDebtId)?.paid_at);
     let onPanel = false;
     if (paid && !wasPaid) {
@@ -2803,16 +3142,19 @@ function bindDebts() {
       name,
       amount,
       due_date: debtDue.value,
-      kind: debtKind.value || "credit_card",
+      kind,
       notes: debtNotes.value.trim(),
       paid,
+      card_id: cardId,
     };
     debtSubmit.disabled = true;
     try {
       if (editingDebtId) await api("PUT", `/debts/${editingDebtId}`, body);
       else await api("POST", "/debts", body);
+      const settled = paid !== wasPaid ? await settleCardInvoice(cardId, amount, paid) : 0;
       if (onPanel) await addDebtAsExpense({ name, amount });
-      toast(onPanel ? "Paga e lançada no painel" : editingDebtId ? "Dívida atualizada" : "Dívida adicionada");
+      if (paid !== wasPaid) toast(paidDebtToast(paid, onPanel, settled));
+      else toast(editingDebtId ? "Dívida atualizada" : "Dívida adicionada");
       resetDebtForm();
       await loadDebts();
     } catch (err) {
@@ -3295,6 +3637,8 @@ function paintTelegram() {
     status.textContent = "O bot ainda não está ativo neste servidor.";
     link.hidden = true;
     unlink.hidden = true;
+    const openBot = document.getElementById("telegram-open");
+    if (openBot) openBot.hidden = true;
     return;
   }
   const bot = telegramState.username ? `@${telegramState.username}` : "o bot";
@@ -3303,6 +3647,15 @@ function paintTelegram() {
     : `Gere um código e envie para ${bot} com /vincular.`;
   link.hidden = false;
   unlink.hidden = !telegramState.linked;
+  const open = document.getElementById("telegram-open");
+  if (open) {
+    if (telegramState.username) {
+      open.href = `https://t.me/${telegramState.username}`;
+      open.hidden = false;
+    } else {
+      open.hidden = true;
+    }
+  }
 }
 
 async function loadTelegram() {
@@ -3789,6 +4142,310 @@ function bindSavings() {
   });
 }
 
+const CARD_BRANDS = {
+  visa: "Visa",
+  mastercard: "Mastercard",
+  elo: "Elo",
+  amex: "Amex",
+};
+
+let wallet = [];
+let selectedCardId = null;
+
+function setCardBrand(brand) {
+  const input = document.getElementById("card-brand");
+  if (input) input.value = brand;
+  document.querySelectorAll("#card-form [data-brand]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.brand === brand);
+  });
+}
+
+function setChargePaidFlag(paid) {
+  const input = document.getElementById("charge-paid");
+  if (input) input.value = paid ? "1" : "0";
+  document.querySelectorAll("#charge-form [data-charge-paid]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.chargePaid === (paid ? "1" : "0"));
+  });
+}
+
+function resetCardForm() {
+  document.getElementById("card-form")?.reset();
+  setCardBrand("visa");
+  closeEntryForm(document.getElementById("card-form"));
+}
+
+function resetChargeForm() {
+  document.getElementById("charge-form")?.reset();
+  setChargePaidFlag(false);
+  const date = document.getElementById("charge-date");
+  if (date) date.value = today();
+  closeEntryForm(document.getElementById("charge-form"));
+}
+
+function selectedCard() {
+  return wallet.find((card) => card.id === selectedCardId) || wallet[0] || null;
+}
+
+function paintWalletButton() {
+  const button = document.getElementById("open-cards");
+  const hint = document.getElementById("wallet-open-hint");
+  const brand = document.getElementById("wallet-open-brand");
+  const digits = document.getElementById("wallet-open-digits");
+  if (!button) return;
+  button.classList.remove("has-card", "brand-visa", "brand-mastercard", "brand-elo", "brand-amex");
+  const card = wallet[0];
+  if (!card) {
+    if (hint) hint.textContent = "Limite, fatura e extrato";
+    if (brand) brand.textContent = "";
+    if (digits) digits.textContent = "";
+    return;
+  }
+  button.classList.add("has-card", `brand-${card.brand}`);
+  if (hint) hint.textContent = wallet.length > 1 ? `${card.issuer} · e mais ${wallet.length - 1}` : card.issuer;
+  if (brand) brand.textContent = CARD_BRANDS[card.brand] || "";
+  if (digits) digits.textContent = `•••• ${card.last4}`;
+}
+
+function chargeSum(charges, paid) {
+  return charges.filter((charge) => Boolean(charge.paid_at) === paid).reduce((sum, charge) => sum + Number(charge.amount || 0), 0);
+}
+
+function chargeRow(card, charge) {
+  const row = document.createElement("article");
+  row.className = "charge-row";
+  const name = document.createElement("div");
+  name.className = "charge-name";
+  name.textContent = charge.description;
+  const meta = document.createElement("div");
+  meta.className = "charge-meta";
+  meta.textContent = formatDate(String(charge.spent_at).slice(0, 10));
+  const amount = document.createElement("div");
+  amount.className = "charge-amount";
+  amount.textContent = money(charge.amount);
+  const actions = document.createElement("div");
+  actions.className = "charge-actions";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = charge.paid_at ? "btn secondary" : "pay-btn";
+  toggle.textContent = charge.paid_at ? "Reabrir" : "Paguei";
+  toggle.addEventListener("click", () => setChargePaid(card, charge, !charge.paid_at));
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "btn secondary";
+  remove.textContent = "Excluir";
+  remove.addEventListener("click", () => removeCharge(card, charge));
+  actions.append(toggle, remove);
+  row.append(name, amount, meta, actions);
+  return row;
+}
+
+function renderCardsView() {
+  paintWalletButton();
+  const card = selectedCard();
+  selectedCardId = card?.id ?? null;
+  const empty = document.getElementById("card-empty");
+  const panel = document.getElementById("card-panel");
+  const host = document.getElementById("plastic-host");
+  const switcher = document.getElementById("card-switch");
+  if (empty) empty.hidden = wallet.length > 0;
+  if (panel) panel.hidden = !card;
+  if (!host || !switcher) return;
+  switcher.hidden = wallet.length < 2;
+  switcher.replaceChildren(...wallet.map((item) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = item.id === card?.id ? "is-on" : "";
+    btn.textContent = `${item.issuer} •••• ${item.last4}`;
+    btn.addEventListener("click", () => {
+      selectedCardId = item.id;
+      resetChargeForm();
+      renderCardsView();
+    });
+    return btn;
+  }));
+  host.replaceChildren();
+  if (!card) return;
+  const plastic = document.createElement("article");
+  plastic.className = `plastic brand-${card.brand}`;
+  const top = document.createElement("div");
+  top.className = "plastic-top";
+  const issuer = document.createElement("span");
+  issuer.className = "plastic-issuer";
+  issuer.textContent = card.issuer;
+  const brand = document.createElement("span");
+  brand.className = "plastic-brand";
+  brand.textContent = CARD_BRANDS[card.brand] || card.brand;
+  top.append(issuer, brand);
+  const chip = document.createElement("span");
+  chip.className = "plastic-chip";
+  chip.setAttribute("aria-hidden", "true");
+  const digits = document.createElement("p");
+  digits.className = "plastic-digits";
+  digits.textContent = `•••• ${card.last4}`;
+  const foot = document.createElement("div");
+  foot.className = "plastic-foot";
+  const footBrand = document.createElement("span");
+  footBrand.textContent = "Crédito";
+  const footLimit = document.createElement("span");
+  footLimit.textContent = money(card.credit_limit);
+  foot.append(footBrand, footLimit);
+  plastic.append(top, chip, digits, foot);
+  host.appendChild(plastic);
+
+  const charges = card.charges || [];
+  const open = charges.filter((item) => !item.paid_at);
+  const paid = charges.filter((item) => item.paid_at);
+  const openSum = chargeSum(charges, false);
+  const paidSum = chargeSum(charges, true);
+  const limit = Number(card.credit_limit) || 0;
+  const free = Math.max(0, limit - openSum);
+  const usedPct = limit ? Math.min(100, (openSum / limit) * 100) : 0;
+  const limitCard = document.querySelector(".limit-card");
+  if (limitCard) limitCard.classList.toggle("is-over", openSum > limit);
+  const fill = document.getElementById("limit-fill");
+  if (fill) fill.style.width = `${usedPct}%`;
+  const total = document.getElementById("limit-total");
+  if (total) total.textContent = money(limit);
+  const used = document.getElementById("limit-used");
+  if (used) used.textContent = `Fatura ${money(openSum)}`;
+  const freeEl = document.getElementById("limit-free");
+  if (freeEl) freeEl.textContent = openSum > limit ? "Acima do limite" : `Livre ${money(free)}`;
+  const openSumEl = document.getElementById("card-open-sum");
+  const paidSumEl = document.getElementById("card-paid-sum");
+  const openHint = document.getElementById("card-open-hint");
+  const paidHint = document.getElementById("card-paid-hint");
+  if (openSumEl) openSumEl.textContent = money(openSum);
+  if (paidSumEl) paidSumEl.textContent = money(paidSum);
+  if (openHint) openHint.textContent = open.length === 1 ? "1 lançamento" : open.length ? `${open.length} lançamentos` : "Nada na fatura";
+  if (paidHint) paidHint.textContent = paid.length === 1 ? "1 lançamento" : paid.length ? `${paid.length} lançamentos` : "Nada pago";
+  document.getElementById("charge-open")?.replaceChildren(...open.map((item) => chargeRow(card, item)));
+  document.getElementById("charge-paid")?.replaceChildren(...paid.map((item) => chargeRow(card, item)));
+  const openEmpty = document.getElementById("charge-open-empty");
+  const paidEmpty = document.getElementById("charge-paid-empty");
+  if (openEmpty) openEmpty.hidden = open.length > 0;
+  if (paidEmpty) paidEmpty.hidden = paid.length > 0;
+}
+
+async function loadCards() {
+  try {
+    wallet = await api("GET", "/cards");
+  } catch (err) {
+    wallet = [];
+    toast(err.message, "error");
+  }
+  if (!wallet.some((card) => card.id === selectedCardId)) selectedCardId = wallet[0]?.id ?? null;
+  renderCardsView();
+  syncDebtCardField();
+  if (debts.length) renderDebts();
+}
+
+async function setChargePaid(card, charge, paid) {
+  try {
+    await api("PUT", `/cards/${card.id}/charges/${charge.id}`, {
+      description: charge.description,
+      amount: Number(charge.amount),
+      spent_at: String(charge.spent_at).slice(0, 10),
+      paid,
+    });
+    await loadCards();
+    toast(paid ? "Marcado como pago" : "Voltou para a fatura");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function removeCharge(card, charge) {
+  try {
+    await api("DELETE", `/cards/${card.id}/charges/${charge.id}`);
+    await loadCards();
+    toast(`"${charge.description}" excluído`);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function bindCards() {
+  document.getElementById("open-cards")?.addEventListener("click", () => showView("cards"));
+  document.getElementById("cards-back")?.addEventListener("click", () => showView("debts"));
+  document.querySelectorAll("#card-form [data-brand]").forEach((btn) => {
+    btn.addEventListener("click", () => setCardBrand(btn.dataset.brand));
+  });
+  document.querySelectorAll("#charge-form [data-charge-paid]").forEach((btn) => {
+    btn.addEventListener("click", () => setChargePaidFlag(btn.dataset.chargePaid === "1"));
+  });
+  document.getElementById("card-cancel")?.addEventListener("click", resetCardForm);
+  document.getElementById("charge-cancel")?.addEventListener("click", resetChargeForm);
+  document.getElementById("card-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const issuer = document.getElementById("card-issuer").value.trim();
+    const last4 = document.getElementById("card-last4").value.replace(/\D/g, "");
+    const creditLimit = parseAmount(document.getElementById("card-limit").value);
+    if (!issuer) return toast("Informe a empresa do cartão", "error");
+    if (!/^\d{4}$/.test(last4)) return toast("Use os 4 últimos números", "error");
+    if (Number.isNaN(creditLimit)) return toast("Informe o limite", "error");
+    const submit = document.getElementById("card-submit");
+    if (submit) submit.disabled = true;
+    try {
+      const created = await api("POST", "/cards", {
+        issuer,
+        brand: document.getElementById("card-brand").value,
+        last4,
+        credit_limit: creditLimit,
+      });
+      selectedCardId = created.id;
+      resetCardForm();
+      await loadCards();
+      toast("Cartão adicionado");
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
+  document.getElementById("charge-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const card = selectedCard();
+    if (!card) return;
+    const description = document.getElementById("charge-description").value.trim();
+    const amount = parseAmount(document.getElementById("charge-amount").value);
+    const spentAt = document.getElementById("charge-date").value || today();
+    if (!description) return toast("Informe a descrição", "error");
+    if (Number.isNaN(amount)) return toast("Valor inválido. Use por exemplo 49,90", "error");
+    try {
+      await api("POST", `/cards/${card.id}/charges`, {
+        description,
+        amount,
+        spent_at: spentAt,
+        paid: document.getElementById("charge-paid").value === "1",
+      });
+      resetChargeForm();
+      await loadCards();
+      toast("Lançado no extrato");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
+  document.getElementById("card-remove")?.addEventListener("click", async () => {
+    const card = selectedCard();
+    if (!card) return;
+    const ok = await askDialog({
+      title: "Excluir cartão?",
+      text: `Apagar o ${card.issuer} final ${card.last4} e o extrato dele?`,
+      okLabel: "Excluir",
+      cancelLabel: "Cancelar",
+    });
+    if (ok !== true) return;
+    try {
+      await api("DELETE", `/cards/${card.id}`);
+      selectedCardId = null;
+      await loadCards();
+      toast("Cartão excluído");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
+}
+
 (async function init() {
   if (monthFilter && !monthFilter.value) monthFilter.value = today().slice(0, 7);
   enhanceControls();
@@ -3800,6 +4457,7 @@ function bindSavings() {
   bindSubscriptions();
   bindPaidFolds();
   bindSavings();
+  bindCards();
   bindTelegram();
   const start = viewFromHash();
   if (start !== "home") showView(start, false);
@@ -3807,7 +4465,7 @@ function bindSavings() {
   if (!document.getElementById("view-home")?.hidden) renderDashboard();
   await loadCategories();
   await loadSettings();
-  await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions(), loadSavings()]);
+  await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions(), loadSavings(), loadCards()]);
 })();
 
 /* ---------- controles customizados ---------- */
@@ -3983,6 +4641,7 @@ function enhanceControls() {
   enhanceSelect(chartMode);
   enhanceSelect(saveCategorySelect, { colorize: true });
   enhanceSelect(mobileSort);
+  enhanceSelect(document.getElementById("debt-card"));
   enhanceMonth(monthFilter);
 }
 
