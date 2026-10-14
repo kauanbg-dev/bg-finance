@@ -2534,6 +2534,12 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
     width: min(640px, calc(100% - 32px));
     transform: translateX(-50%);
   }
+  .plastic-wrap{
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+  }
+  .plastic-edit{ width: auto; }
 }
 
 .wallet-open{
@@ -2597,11 +2603,21 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   cursor: pointer;
 }
 .card-switch button.is-on{ background: #2563eb; color: #fff; border-color: transparent; }
+.plastic-wrap{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+#plastic-host{ width: min(100%, 420px); }
+.plastic-edit{ width: min(100%, 420px); }
+.plastic-edit[hidden]{ display: none !important; }
 .plastic{
   position: relative;
-  width: min(100%, 420px);
+  width: 100%;
   aspect-ratio: 1.7 / 1;
-  margin: 0 auto 14px;
+  margin: 0;
   padding: 18px 20px;
   border-radius: 22px;
   color: #fff;

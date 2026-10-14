@@ -447,7 +447,10 @@
       </header>
 
       <div id="card-switch" class="card-switch" hidden></div>
-      <div id="plastic-host"></div>
+      <div class="plastic-wrap">
+        <div id="plastic-host"></div>
+        <button type="button" class="btn secondary plastic-edit" id="card-edit" hidden>Editar cartão</button>
+      </div>
       <p id="card-empty" class="empty-note">Nenhum cartão ainda. Cadastre a empresa, a bandeira e os 4 últimos números.</p>
 
       <button type="button" class="add-launch add-launch-main" data-open-form="card-form">
@@ -549,7 +552,7 @@
           </div>
           <div class="field">
             <label>Situação</label>
-            <input type="hidden" id="charge-paid" value="0">
+            <input type="hidden" id="charge-paid-flag" value="0">
             <div class="segmented" role="group" aria-label="Situação do lançamento">
               <button type="button" class="seg-btn active" data-charge-paid="0">A pagar</button>
               <button type="button" class="seg-btn" data-charge-paid="1">Já paguei</button>
@@ -575,7 +578,6 @@
         </div>
 
         <div class="card-actions">
-          <button type="button" class="btn secondary" id="card-edit">Editar cartão</button>
           <button type="button" class="btn danger" id="card-remove">Excluir este cartão</button>
         </div>
       </div>
