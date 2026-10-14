@@ -4157,6 +4157,7 @@ const CARD_BRANDS = {
 let wallet = [];
 let selectedCardId = null;
 let editingCardId = null;
+let editingCharge = null;
 
 const CARD_COLOR_FALLBACK = { visa: "#1a1f71", mastercard: "#1a1a1a", elo: "#141414", amex: "#016fd0" };
 
@@ -4226,11 +4227,29 @@ function startEditCard(card) {
 }
 
 function resetChargeForm() {
+  editingCharge = null;
   document.getElementById("charge-form")?.reset();
   setChargePaidFlag(false);
   const date = document.getElementById("charge-date");
   if (date) date.value = today();
+  const submit = document.getElementById("charge-submit");
+  if (submit) submit.textContent = "Adicionar";
   closeEntryForm(document.getElementById("charge-form"));
+}
+
+function startEditCharge(card, charge) {
+  editingCharge = { cardId: card.id, ...charge };
+  selectedCardId = card.id;
+  const description = document.getElementById("charge-description");
+  const amount = document.getElementById("charge-amount");
+  const date = document.getElementById("charge-date");
+  if (description) description.value = charge.description;
+  if (amount) amount.value = Number(charge.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (date) date.value = String(charge.spent_at).slice(0, 10);
+  setChargePaidFlag(Boolean(charge.paid_at));
+  const submit = document.getElementById("charge-submit");
+  if (submit) submit.textContent = "Salvar alterações";
+  openEntryForm(document.getElementById("charge-form"), description);
 }
 
 function selectedCard() {
@@ -4403,7 +4422,12 @@ function chargeRow(card, charge) {
   remove.className = "btn secondary";
   remove.textContent = "Excluir";
   remove.addEventListener("click", () => removeCharge(card, charge));
-  actions.append(toggle, remove);
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "btn secondary";
+  edit.textContent = "Editar";
+  edit.addEventListener("click", () => startEditCharge(card, charge));
+  actions.append(toggle, edit, remove);
   row.append(name, amount, meta, actions);
   return row;
 }
@@ -4582,6 +4606,15 @@ function bindCards() {
   document.querySelectorAll("#card-form [data-color]").forEach((btn) => {
     btn.addEventListener("click", () => setCardColor(btn.dataset.color));
   });
+  document.querySelector('[data-open-form="charge-form"]')?.addEventListener("click", () => {
+    editingCharge = null;
+    document.getElementById("charge-form")?.reset();
+    setChargePaidFlag(false);
+    const date = document.getElementById("charge-date");
+    if (date) date.value = today();
+    const submit = document.getElementById("charge-submit");
+    if (submit) submit.textContent = "Adicionar";
+  });
   document.querySelectorAll("#charge-form [data-charge-paid]").forEach((btn) => {
     btn.addEventListener("click", () => setChargePaidFlag(btn.dataset.chargePaid === "1"));
   });
@@ -4635,17 +4668,34 @@ function bindCards() {
     if (Number.isNaN(amount)) return toast("Valor inválido. Use por exemplo 49,90", "error");
     try {
       const alreadyPaid = document.getElementById("charge-paid-flag").value === "1";
-      await api("POST", `/cards/${card.id}/charges`, {
-        description,
-        amount,
-        spent_at: spentAt,
-        paid: alreadyPaid,
-      });
-      const changed = await applyChargeToInvoices(card, amount, alreadyPaid);
-      resetChargeForm();
-      await loadCards();
-      if (changed) await loadDebts();
-      toast(alreadyPaid ? "Lançado como pago" : changed ? "Lançado e a fatura aumentou" : "Lançado no extrato");
+      const current = editingCharge;
+      if (current) {
+        const wasUnpaid = !current.paid_at;
+        if (wasUnpaid) await applyChargeToInvoices(card, current.amount, true);
+        await api("PUT", `/cards/${card.id}/charges/${current.id}`, {
+          description,
+          amount,
+          spent_at: spentAt,
+          paid: alreadyPaid,
+        });
+        const added = alreadyPaid ? false : await applyChargeToInvoices(card, amount, false);
+        resetChargeForm();
+        await loadCards();
+        if (wasUnpaid || added) await loadDebts();
+        toast("Lançamento atualizado");
+      } else {
+        await api("POST", `/cards/${card.id}/charges`, {
+          description,
+          amount,
+          spent_at: spentAt,
+          paid: alreadyPaid,
+        });
+        const changed = await applyChargeToInvoices(card, amount, alreadyPaid);
+        resetChargeForm();
+        await loadCards();
+        if (changed) await loadDebts();
+        toast(alreadyPaid ? "Lançado como pago" : changed ? "Lançado e a fatura aumentou" : "Lançado no extrato");
+      }
     } catch (err) {
       toast(err.message, "error");
     }
