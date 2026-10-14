@@ -2981,6 +2981,7 @@ function renderDebts() {
   renderPaidSection("debt-paid-card", groups.paid, paidDay, (debt) => debtCard(debt, "paid"));
   if (empty) empty.hidden = open.length > 0;
   renderDueStrip();
+  renderCardsView();
 }
 
 async function loadDebts() {
@@ -4210,6 +4211,49 @@ function chargeSum(charges, paid) {
   return charges.filter((charge) => Boolean(charge.paid_at) === paid).reduce((sum, charge) => sum + Number(charge.amount || 0), 0);
 }
 
+function cardInvoices(card) {
+  return debts.filter((debt) => debt.kind === "credit_card" && String(debt.card_id || "") === String(card.id) && !debt.paid_at);
+}
+
+function cardLimitUse(card) {
+  const openCharges = chargeSum(card.charges || [], false);
+  const invoices = cardInvoices(card)
+    .slice()
+    .sort((a, b) => String(a.due_date || "").localeCompare(String(b.due_date || "")));
+  let covered = openCharges;
+  let extra = 0;
+  invoices.forEach((debt) => {
+    const amount = Number(debt.amount) || 0;
+    const taken = Math.min(covered, amount);
+    covered -= taken;
+    extra += amount - taken;
+  });
+  return {
+    used: Math.round((openCharges + extra) * 100) / 100,
+    invoices,
+    uncovered: Math.round(Math.max(0, covered) * 100) / 100,
+  };
+}
+
+function invoiceRow(debt) {
+  const row = document.createElement("article");
+  row.className = "charge-row invoice-row";
+  const name = document.createElement("div");
+  name.className = "charge-name";
+  name.textContent = debt.name;
+  const meta = document.createElement("div");
+  meta.className = "charge-meta";
+  const when = debt.due_date ? formatDate(String(debt.due_date).slice(0, 10)) : "Sem vencimento";
+  const bucket = debtBucket(debt);
+  const where = bucket === "next" ? "Mês que vem" : bucket === "late" ? "Atrasada" : bucket === "soon" ? "Este mês" : "";
+  meta.textContent = [when, where, debt.notes].filter(Boolean).join(" · ");
+  const amount = document.createElement("div");
+  amount.className = "charge-amount";
+  amount.textContent = money(debt.amount);
+  row.append(name, amount, meta);
+  return row;
+}
+
 function chargeRow(card, charge) {
   const row = document.createElement("article");
   row.className = "charge-row";
@@ -4295,7 +4339,8 @@ function renderCardsView() {
   const charges = card.charges || [];
   const open = charges.filter((item) => !item.paid_at);
   const paid = charges.filter((item) => item.paid_at);
-  const openSum = chargeSum(charges, false);
+  const usage = cardLimitUse(card);
+  const openSum = usage.used;
   const paidSum = chargeSum(charges, true);
   const limit = Number(card.credit_limit) || 0;
   const free = Math.max(0, limit - openSum);
@@ -4310,13 +4355,35 @@ function renderCardsView() {
   if (used) used.textContent = `Fatura ${money(openSum)}`;
   const freeEl = document.getElementById("limit-free");
   if (freeEl) freeEl.textContent = openSum > limit ? "Acima do limite" : `Livre ${money(free)}`;
+  const invoiceRows = usage.invoices.map((debt) => invoiceRow(debt));
+  if (usage.uncovered > 0.009) {
+    const pending = document.createElement("article");
+    pending.className = "charge-row invoice-row";
+    const name = document.createElement("div");
+    name.className = "charge-name";
+    name.textContent = "Extrato ainda sem fatura";
+    const meta = document.createElement("div");
+    meta.className = "charge-meta";
+    meta.textContent = "Também entra no limite";
+    const amount = document.createElement("div");
+    amount.className = "charge-amount";
+    amount.textContent = money(usage.uncovered);
+    pending.append(name, amount, meta);
+    invoiceRows.push(pending);
+  }
+  document.getElementById("invoice-list")?.replaceChildren(...invoiceRows);
+  const invoiceEmpty = document.getElementById("invoice-empty");
+  if (invoiceEmpty) invoiceEmpty.hidden = invoiceRows.length > 0;
   const openSumEl = document.getElementById("card-open-sum");
   const paidSumEl = document.getElementById("card-paid-sum");
   const openHint = document.getElementById("card-open-hint");
   const paidHint = document.getElementById("card-paid-hint");
   if (openSumEl) openSumEl.textContent = money(openSum);
   if (paidSumEl) paidSumEl.textContent = money(paidSum);
-  if (openHint) openHint.textContent = open.length === 1 ? "1 lançamento" : open.length ? `${open.length} lançamentos` : "Nada na fatura";
+  if (openHint) {
+    const count = usage.invoices.length;
+    openHint.textContent = count === 1 ? "1 fatura no limite" : count ? `${count} faturas no limite` : open.length ? `${open.length} lançamentos` : "Nada na fatura";
+  }
   if (paidHint) paidHint.textContent = paid.length === 1 ? "1 lançamento" : paid.length ? `${paid.length} lançamentos` : "Nada pago";
   document.getElementById("charge-open")?.replaceChildren(...open.map((item) => chargeRow(card, item)));
   document.getElementById("charge-paid")?.replaceChildren(...paid.map((item) => chargeRow(card, item)));

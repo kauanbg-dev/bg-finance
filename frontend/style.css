@@ -2669,6 +2669,8 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   background: linear-gradient(90deg, #22c55e, #eab308);
 }
 .limit-card.is-over .limit-bar span{ background: #ef4444; }
+.invoice-card{ margin-bottom: 12px; }
+.invoice-card .chart-header{ margin-bottom: 10px; }
 .card-totals{ margin-bottom: 12px; }
 .card-totals .card{ grid-column: auto; }
 .charge-label{ margin: 14px 0 8px; font-size: 13px; color: rgba(var(--wash), .62); }
