@@ -1923,6 +1923,8 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 
 .debt-list{ display: grid; gap: 10px; }
 .month-stack{ display: grid; gap: 12px; }
+.month-stack[hidden],
+.debt-list[hidden]{ display: none !important; }
 .debt-group{ margin-bottom: 12px; }
 .month-stack .debt-group{ margin: 0; }
 .month-title{ display: flex; align-items: center; gap: 8px; min-width: 0; }
