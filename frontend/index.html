@@ -75,6 +75,26 @@
 
     <section id="view-home" class="app-view">
     <div class="cards">
+      <div class="card total">
+        <div class="card-top">
+          <h3>Saldo</h3>
+          <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 15h2"/></svg></span>
+        </div>
+        <p id="total">R$ 0,00</p>
+        <span class="card-hint" id="total-hint">&nbsp;</span>
+      </div>
+
+      <div class="due-strip" id="due-strip" hidden>
+        <button type="button" class="due-strip-open" id="due-strip-open">
+          <span class="due-strip-name" id="due-strip-name"></span>
+          <span class="due-strip-when" id="due-strip-when"></span>
+        </button>
+        <div class="due-strip-side">
+          <span class="due-strip-amount" id="due-strip-amount"></span>
+          <button type="button" class="pay-btn" id="due-strip-pay">Paga</button>
+        </div>
+      </div>
+
       <div class="card income">
         <div class="card-top">
           <h3>Receitas</h3>
@@ -91,15 +111,6 @@
         </div>
         <p id="expense">R$ 0,00</p>
         <span class="card-hint" id="expense-hint">&nbsp;</span>
-      </div>
-
-      <div class="card total">
-        <div class="card-top">
-          <h3>Saldo</h3>
-          <span class="card-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 15h2"/></svg></span>
-        </div>
-        <p id="total">R$ 0,00</p>
-        <span class="card-hint" id="total-hint">&nbsp;</span>
       </div>
 
       <div class="card rate">
@@ -156,22 +167,6 @@
       </div>
     </form>
 
-    <div class="sheet-card import-card">
-      <div class="chart-header">
-        <h2>Importar extrato</h2>
-        <p class="muted">CSV ou OFX de qualquer banco.</p>
-      </div>
-      <div class="segmented" id="import-source" role="group" aria-label="Origem do arquivo">
-        <button type="button" class="seg-btn active" data-source="account">Conta</button>
-        <button type="button" class="seg-btn" data-source="card">Fatura do cartão</button>
-      </div>
-      <p class="muted import-hint" id="import-hint">Extrato da conta. Valor positivo vira receita e negativo vira despesa.</p>
-      <label class="btn secondary import-file">
-        <input id="statement-file" type="file" accept=".csv,.ofx,.qfx,text/csv,application/x-ofx">
-        <span>Escolher arquivo</span>
-      </label>
-    </div>
-
     <div class="filter-row">
       <div class="field field-month">
         <label>Mês</label>
@@ -185,26 +180,31 @@
           </button>
         </div>
       </div>
-      <div class="field">
-        <label>Tipo</label>
-        <select id="type-filter">
-          <option value="">Todos</option>
-          <option value="income">Receitas</option>
-          <option value="expense">Despesas</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Categoria</label>
-        <select id="category-filter">
-          <option value="">Todas</option>
-        </select>
+      <div class="filter-extra" id="filter-extra" hidden>
+        <div class="field field-type">
+          <label>Tipo</label>
+          <select id="type-filter">
+            <option value="">Todos</option>
+            <option value="income">Receitas</option>
+            <option value="expense">Despesas</option>
+          </select>
+        </div>
+        <div class="field field-cat-filter">
+          <label>Categoria</label>
+          <select id="category-filter">
+            <option value="">Todas</option>
+          </select>
+        </div>
       </div>
       <div class="field field-search">
         <label>Buscar</label>
         <input type="search" id="search-filter" placeholder="Descrição…" />
       </div>
-      <button class="btn secondary" id="clear-filter" type="button">Limpar</button>
-      <button class="btn secondary" id="export-csv" type="button">Exportar CSV</button>
+      <button class="btn secondary filter-toggle" id="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-extra">Filtros</button>
+      <div class="filter-actions" id="filter-actions" hidden>
+        <button class="btn secondary" id="clear-filter" type="button">Limpar</button>
+        <button class="btn secondary" id="export-csv" type="button">Exportar CSV</button>
+      </div>
     </div>
 
     <div class="sheet-card">
@@ -349,7 +349,7 @@
         </div>
       </div>
 
-      <button type="button" class="add-launch" data-open-form="debt-form">
+      <button type="button" class="add-launch add-launch-main" data-open-form="debt-form">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar dívida
       </button>
@@ -450,7 +450,7 @@
         </div>
       </div>
 
-      <button type="button" class="add-launch" data-open-form="sub-form">
+      <button type="button" class="add-launch add-launch-main" data-open-form="sub-form">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar assinatura
       </button>
@@ -558,7 +558,7 @@
         </div>
       </div>
 
-      <button type="button" class="add-launch" data-open-form="save-form">
+      <button type="button" class="add-launch add-launch-main" data-open-form="save-form">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar
       </button>
@@ -600,8 +600,23 @@
     <section id="view-settings" class="app-view" hidden>
       <header class="view-head">
         <h2>Ajustes</h2>
-        <p class="muted">Escolha o que fica visível no painel. Dá para ligar de novo quando quiser.</p>
+        <p class="muted">Gráficos do painel, importação de extrato e Telegram.</p>
       </header>
+      <div class="sheet-card import-card">
+        <div class="chart-header">
+          <h2>Importar extrato</h2>
+          <p class="muted">CSV ou OFX de qualquer banco.</p>
+        </div>
+        <div class="segmented" id="import-source" role="group" aria-label="Origem do arquivo">
+          <button type="button" class="seg-btn active" data-source="account">Conta</button>
+          <button type="button" class="seg-btn" data-source="card">Fatura do cartão</button>
+        </div>
+        <p class="muted import-hint" id="import-hint">Extrato da conta. Valor positivo vira receita e negativo vira despesa.</p>
+        <label class="btn secondary import-file">
+          <input id="statement-file" type="file" accept=".csv,.ofx,.qfx,text/csv,application/x-ofx">
+          <span>Escolher arquivo</span>
+        </label>
+      </div>
       <div class="sheet-card">
         <div class="chart-header">
           <h2>Gráficos</h2>
@@ -699,6 +714,7 @@
         </div>
 
         <div class="modal-actions">
+          <button id="delete-edit" class="btn danger" type="button">Excluir</button>
           <button id="cancel-edit" class="btn secondary" type="button">Cancelar</button>
           <button class="btn primary" type="submit">Salvar</button>
         </div>

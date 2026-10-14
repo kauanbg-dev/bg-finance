@@ -727,6 +727,64 @@ input[type="number"]{
   gap: 10px;
   margin-bottom: 14px;
 }
+.card.total,
+.card.rate{ grid-column: 1 / -1; }
+.card.income,
+.card.expense{ order: 3; }
+.card.rate{ order: 4; }
+.due-strip{
+  order: 2;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(var(--wash), .04);
+  border: 1px solid rgba(var(--wash), .08);
+}
+.due-strip[hidden]{ display: none !important; }
+.due-strip.is-bad{ border-color: rgba(248, 113, 113, .45); }
+.due-strip.is-warn{ border-color: rgba(251, 191, 36, .45); }
+.due-strip-open{
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.due-strip-when{
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(var(--wash), .62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.due-strip.is-bad .due-strip-when{ color: var(--money-out); }
+.due-strip.is-warn .due-strip-when{ color: #fbbf24; }
+.due-strip-name{
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.due-strip-side{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.due-strip-amount{ font-weight: 800; font-variant-numeric: tabular-nums; }
+.due-strip .pay-btn{ flex: none; min-height: 36px; padding: 6px 12px; white-space: nowrap; }
+.card.total p{ font-size: clamp(28px, 8vw, 36px); }
 .card{
   --accent: #60a5fa;
   position: relative;
@@ -887,9 +945,29 @@ li button{
   flex-wrap: wrap;
 }
 .filter-row .field{ min-width: 0; }
-.filter-row .field-month,
-.filter-row .field-search{ grid-column: 1 / -1; }
+.filter-row .field-month{ order: 1; grid-column: 1 / -1; }
+.filter-row .field-search{ order: 2; grid-column: auto; }
+.filter-toggle{ order: 3; }
+.filter-extra{ order: 4; }
+.filter-actions{ order: 5; }
 .filter-row .btn{ width: 100%; }
+.filter-toggle{
+  align-self: end;
+  min-height: 44px;
+}
+.filter-toggle.is-on{
+  border-color: rgba(59, 130, 246, .55);
+  color: #93c5fd;
+}
+.filter-extra,
+.filter-actions{
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.filter-extra[hidden],
+.filter-actions[hidden]{ display: none !important; }
 
 .chart-card{
   margin-top: 14px;
@@ -1399,10 +1477,8 @@ li button{
 #tx-table, #tx-table tbody{ display: block; }
 #tx-table tbody tr:not(.empty-row){
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 96px;
-  grid-template-areas:
-    "desc desc amount"
-    "date cat actions";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "date desc amount";
   align-items: center;
   gap: 8px 10px;
   padding: 12px;
@@ -1410,15 +1486,16 @@ li button{
   border-radius: 14px;
   background: rgba(var(--wash),.03);
   border: 1px solid rgba(var(--wash),.06);
+  cursor: pointer;
 }
 #tx-table td{ display: block; padding: 0; border: 0; white-space: nowrap; }
 #tx-table .desc-cell{ grid-area: desc; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
 #tx-table td.amount{ grid-area: amount; justify-self: end; font-size: 15px; text-align: right; }
-#tx-table .date-cell{ grid-area: date; font-size: 12px; }
-#tx-table .cat-cell{ grid-area: cat; min-width: 0; }
-#tx-table .cat-chip{ max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-#tx-table .type-cell{ display: none; }
-#tx-table .act-cell{ grid-area: actions; justify-self: end; }
+#tx-table .date-cell{ grid-area: date; font-size: 12px; color: rgba(var(--wash), .55); font-variant-numeric: tabular-nums; }
+#tx-table .date-full{ display: none; }
+#tx-table .cat-cell,
+#tx-table .type-cell,
+#tx-table .act-cell{ display: none; }
 #tx-table .empty-row, #tx-table .empty-row td{ display: block; }
 .sheet tbody tr .action-btn{ opacity: 1; }
 .table-wrap{ overflow: visible; }
@@ -1485,8 +1562,20 @@ li button{
       "date type type submit";
   }
   .filter-row{ grid-template-columns: 1.4fr 1fr 1fr; }
+  .filter-row .field-month,
   .filter-row .field-search{ grid-column: auto; }
   .filter-row .btn{ grid-column: auto; }
+  .filter-toggle{ display: none; }
+  .filter-extra,
+  .filter-actions,
+  .filter-extra[hidden],
+  .filter-actions[hidden]{ display: contents !important; }
+  .field-month{ order: 1; }
+  .field-type{ order: 2; }
+  .field-cat-filter{ order: 3; }
+  .field-search{ order: 4; }
+  #clear-filter{ order: 5; }
+  #export-csv{ order: 6; }
 
   .chart-header > p.muted{ width: auto; }
   .charts-grid{ grid-template-columns: 1fr 1fr; }
@@ -1511,8 +1600,13 @@ li button{
     padding: 10px 8px;
     border-bottom: 1px solid rgba(var(--wash),.08);
   }
-  #tx-table .type-cell{ display: table-cell; }
+  #tx-table .date-short{ display: none; }
+  #tx-table .date-full{ display: inline; }
+  #tx-table .cat-cell,
+  #tx-table .type-cell,
+  #tx-table .act-cell{ display: table-cell; }
   #tx-table .desc-cell{ white-space: normal; }
+  #tx-table tbody tr:not(.empty-row){ cursor: auto; }
   .sheet tbody tr .action-btn{ opacity: .75; }
   .sheet tbody tr:hover .action-btn,
   .sheet tbody tr .action-btn:focus-visible{ opacity: 1; }
@@ -1546,6 +1640,12 @@ li button{
   .top-actions{ gap: 14px; }
 
   .cards{ grid-template-columns: repeat(4, 1fr); }
+  .card.total,
+  .card.income,
+  .card.expense,
+  .card.rate{ order: 0; grid-column: auto; }
+  .due-strip{ order: 1; grid-column: 1 / -1; }
+  .card.total p{ font-size: 26px; }
   .card{ padding: 18px; }
   .card p{ font-size: 26px; }
   .card-icon{ width: 34px; height: 34px; border-radius: 11px; }
@@ -1706,6 +1806,8 @@ html[data-theme="light"] .filter-row{
   border-color: rgba(15, 23, 42, .08);
   box-shadow: 0 10px 28px rgba(15, 23, 42, .05);
 }
+html[data-theme="light"] .filter-toggle.is-on{ color: #1d4ed8; }
+html[data-theme="light"] .due-strip.is-warn .due-strip-when{ color: #b45309; }
 html[data-theme="light"] input,
 html[data-theme="light"] select,
 html[data-theme="light"] .menu-select-btn,
