@@ -66,6 +66,8 @@ const ICON = {
   calendar: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 13l2.5-7h11L20 13v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.4 18.4 0 0 1-3.2 4.2"/><path d="M6.1 6.1C3.6 7.8 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.1-.8"/></svg>',
 };
 const KEYWORDS = [
   [/sal[aá]rio|pagamento|holerite/i, "Salário", "income"],
@@ -357,8 +359,8 @@ function seedPreviewSubs() {
   if (previewSubs.length) return;
   const next = `${shiftMonth(today().slice(0, 7), 1)}-08`;
   previewSubs = [
-    { id: ++previewSeq, name: "Netflix", cycle: "monthly", amount: 55.9, due_date: shiftDay(today(), 2), notes: "Plano padrão", active: true, pay_with: "card" },
-    { id: ++previewSeq, name: "Academia", cycle: "monthly", amount: 129.9, due_date: shiftDay(today(), -6), notes: "", active: true },
+    { id: ++previewSeq, name: "Netflix", cycle: "monthly", amount: 55.9, due_date: shiftDay(today(), 2), notes: "Plano padrão", active: true, pay_with: "card", paid_dates: [`${shiftMonth(today().slice(0, 7), -1)}-15`, `${shiftMonth(today().slice(0, 7), -2)}-15`] },
+    { id: ++previewSeq, name: "Academia", cycle: "monthly", amount: 129.9, due_date: shiftDay(today(), -6), notes: "", active: true, paid_dates: [`${shiftMonth(today().slice(0, 7), -1)}-05`] },
     { id: ++previewSeq, name: "iCloud", cycle: "yearly", amount: 149.9, due_date: next, notes: "200 GB", active: true },
     { id: ++previewSeq, name: "Seguro do carro", cycle: "yearly", amount: 890, due_date: `${shiftMonth(today().slice(0, 7), 3)}-20`, notes: "", active: true },
     { id: ++previewSeq, name: "Domínio", cycle: "yearly", amount: 60, due_date: `${shiftMonth(today().slice(0, 7), 4)}-05`, notes: "", active: true },
@@ -366,15 +368,32 @@ function seedPreviewSubs() {
   ];
 }
 
+function previewPiggy(name, category, notes, deposits) {
+  const entries = deposits.map(([monthsAgo, day, amount]) => ({
+    id: ++previewSeq,
+    amount,
+    deposited_at: `${shiftMonth(today().slice(0, 7), -monthsAgo)}-${pad(day)}`,
+  }));
+  return {
+    id: ++previewSeq,
+    name,
+    kind: "piggy",
+    category,
+    notes,
+    entries,
+    amount: Math.round(entries.reduce((sum, entry) => sum + entry.amount, 0) * 100) / 100,
+  };
+}
+
 function seedPreviewSavings() {
   if (previewSavings.length) return;
   previewSavings = [
-    { id: ++previewSeq, name: "CDB do banco", kind: "investment", category: "Renda fixa", amount: 8000, notes: "Liquidez diária" },
-    { id: ++previewSeq, name: "Tesouro Selic", kind: "investment", category: "Tesouro", amount: 4500, notes: "" },
-    { id: ++previewSeq, name: "Ações na corretora", kind: "investment", category: "Ações", amount: 2300, notes: "" },
-    { id: ++previewSeq, name: "Reserva de emergência", kind: "piggy", category: "Emergência", amount: 3000, notes: "6 meses" },
-    { id: ++previewSeq, name: "Viagem de fim de ano", kind: "piggy", category: "Viagem", amount: 1200, notes: "" },
-    { id: ++previewSeq, name: "Presente", kind: "piggy", category: "Presentes", amount: 250, notes: "" },
+    { id: ++previewSeq, name: "CDB do banco", kind: "investment", category: "Renda fixa", amount: 8000, notes: "Liquidez diária", entries: [] },
+    { id: ++previewSeq, name: "Tesouro Selic", kind: "investment", category: "Tesouro", amount: 4500, notes: "", entries: [] },
+    { id: ++previewSeq, name: "Ações na corretora", kind: "investment", category: "Ações", amount: 2300, notes: "", entries: [] },
+    previewPiggy("Reserva de emergência", "Emergência", "6 meses", [[2, 10, 1000], [1, 3, 2000]]),
+    previewPiggy("Viagem de fim de ano", "Viagem", "", [[1, 20, 700], [0, 2, 500]]),
+    previewPiggy("Presente", "Presentes", "", [[3, 15, 250]]),
   ];
 }
 
@@ -512,24 +531,73 @@ function previewApi(method, url, body) {
   }
   if (url === "/savings" || url.startsWith("/savings/")) {
     seedPreviewSavings();
-    const id = url.split("/")[2];
-    if (method === "GET") return previewSavings.map((item) => ({ ...item }));
+    const parts = url.split("/").filter(Boolean);
+    const id = parts[1];
+    if (parts[2] === "entries") {
+      const saving = previewSavings.find((item) => String(item.id) === id && item.kind === "piggy");
+      if (!saving) return {};
+      saving.entries = Array.isArray(saving.entries) ? saving.entries : [];
+      if (method === "POST") {
+        saving.entries.unshift({
+          id: ++previewSeq,
+          amount: Number(body.amount),
+          deposited_at: String(body.deposited_at || today()).slice(0, 10),
+        });
+        saving.amount = Math.round(saving.entries.reduce((sum, entry) => sum + Number(entry.amount), 0) * 100) / 100;
+        return { ...saving, entries: saving.entries.map((entry) => ({ ...entry })) };
+      }
+      if (method === "DELETE") {
+        saving.entries = saving.entries.filter((entry) => String(entry.id) !== parts[3]);
+        saving.amount = Math.round(saving.entries.reduce((sum, entry) => sum + Number(entry.amount), 0) * 100) / 100;
+        return { deleted: 1 };
+      }
+      return {};
+    }
+    if (method === "GET") {
+      return previewSavings.map((item) => ({
+        ...item,
+        entries: (item.entries || []).map((entry) => ({ ...entry })),
+      }));
+    }
     if (method === "POST") {
+      const copied = Array.isArray(body.entries)
+        ? body.entries.map((entry) => ({
+            id: ++previewSeq,
+            amount: Number(entry.amount),
+            deposited_at: String(entry.deposited_at).slice(0, 10),
+          }))
+        : [];
+      const entries = copied.length
+        ? copied
+        : body.kind === "piggy" && Number(body.amount) > 0
+          ? [{ id: ++previewSeq, amount: Number(body.amount), deposited_at: String(body.deposited_at || today()).slice(0, 10) }]
+          : [];
       const created = {
         id: ++previewSeq,
         name: body.name,
         kind: body.kind || "investment",
         category: body.category,
-        amount: body.amount,
         notes: body.notes || "",
+        entries,
+        amount: entries.length
+          ? Math.round(entries.reduce((sum, entry) => sum + Number(entry.amount), 0) * 100) / 100
+          : Number(body.amount) || 0,
       };
       previewSavings.unshift(created);
-      return { ...created };
+      return { ...created, entries: entries.map((entry) => ({ ...entry })) };
     }
     const index = previewSavings.findIndex((item) => String(item.id) === id);
     if (method === "PUT" && index >= 0) {
-      previewSavings[index] = { ...previewSavings[index], ...body };
-      return { ...previewSavings[index] };
+      const previous = previewSavings[index];
+      const kind = body.kind || previous.kind;
+      previewSavings[index] = {
+        ...previous,
+        ...body,
+        kind,
+        entries: kind === "piggy" ? previous.entries || [] : [],
+        amount: kind === "piggy" ? previous.amount : body.amount,
+      };
+      return { ...previewSavings[index], entries: (previewSavings[index].entries || []).map((entry) => ({ ...entry })) };
     }
     if (method === "DELETE" && index >= 0) previewSavings.splice(index, 1);
     return {};
@@ -964,7 +1032,7 @@ editForm?.addEventListener("submit", async (e) => {
     if (mirror) {
       linkingSaved = true;
       try {
-        await putSavedFromExpense(description, Math.round(added * 100) / 100);
+        await putSavedFromExpense(description, Math.round(added * 100) / 100, body.date);
       } finally {
         linkingSaved = false;
       }
@@ -1079,16 +1147,38 @@ function renderTable(rows) {
   }
 
   txCount.textContent = `${sorted.length} registro${sorted.length === 1 ? "" : "s"}`;
+  const heading = document.getElementById("tx-heading");
+  const month = monthFilter?.value || "";
+  if (heading) {
+    heading.textContent = month
+      ? `Lançamentos · ${MONTHS_LONG[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`
+      : "Lançamentos";
+  }
   if (!sorted.length) showMoreBtn.classList.add("hidden");
   if (loading) return emptyRow("Carregando lançamentos…");
   if (!allTransactions.length) return emptyRow("Nenhum lançamento ainda. Adicione o primeiro acima.");
-  if (!sorted.length) return emptyRow("Nada encontrado com esses filtros.");
+  if (!sorted.length) {
+    if (month) return emptyRow(`Nenhum lançamento em ${MONTHS_FULL[Number(month.slice(5)) - 1]} de ${month.slice(0, 4)}.`);
+    return emptyRow("Nada encontrado com esses filtros.");
+  }
 
   tbody.innerHTML = "";
   const remaining = sorted.length - visibleCount;
   showMoreBtn.classList.toggle("hidden", remaining <= 0);
   showMoreBtn.textContent = `Mostrar mais · ${remaining} restante${remaining === 1 ? "" : "s"}`;
+  let lastMonth = "";
   sorted.slice(0, visibleCount).forEach((t) => {
+    const rowMonth = txDate(t).slice(0, 7);
+    if (!month && sortKey === "date" && rowMonth !== lastMonth) {
+      lastMonth = rowMonth;
+      const head = document.createElement("tr");
+      head.className = "month-row";
+      const cell = document.createElement("td");
+      cell.colSpan = 6;
+      cell.textContent = `${MONTHS_LONG[Number(rowMonth.slice(5)) - 1]} ${rowMonth.slice(0, 4)}`;
+      head.appendChild(cell);
+      tbody.appendChild(head);
+    }
     const tr = document.createElement("tr");
     const category = inferCategory(t);
     const dateTd = document.createElement("td");
@@ -1689,12 +1779,16 @@ monthPrev?.addEventListener("click", () => stepMonth(-1));
 monthNext?.addEventListener("click", () => stepMonth(1));
 
 clearFilterBtn?.addEventListener("click", () => {
-  [monthFilter, typeFilter, categoryFilter].forEach((el) => {
+  [typeFilter, categoryFilter].forEach((el) => {
     if (!el) return;
     el.value = "";
     el.dispatchEvent(new Event("change"));
   });
   if (searchFilter) searchFilter.value = "";
+  if (monthFilter) {
+    monthFilter.value = today().slice(0, 7);
+    monthFilter.dispatchEvent(new Event("change"));
+  }
   renderDashboard();
 });
 
@@ -1852,18 +1946,13 @@ function askMirrorSaved(description, amount, toSaved) {
   });
 }
 
-async function putSavedFromExpense(description, amount) {
+async function putSavedFromExpense(description, amount, date) {
+  const day = String(date || today()).slice(0, 10);
   const current = savings.find(
     (item) => item.kind === "piggy" && isSavedMoney(item.category) && catKey(item.name) === catKey(description)
   );
   if (current) {
-    await api("PUT", `/savings/${current.id}`, {
-      name: current.name,
-      amount: Math.round((Number(current.amount) + amount) * 100) / 100,
-      kind: current.kind,
-      category: current.category,
-      notes: current.notes || "",
-    });
+    await api("POST", `/savings/${current.id}/entries`, { amount, deposited_at: day });
   } else {
     await api("POST", "/savings", {
       name: description,
@@ -1871,22 +1960,26 @@ async function putSavedFromExpense(description, amount) {
       kind: "piggy",
       category: SAVED_MONEY,
       notes: "",
+      deposited_at: day,
     });
   }
   await loadSavings();
 }
 
-async function putExpenseFromSaved(name, amount) {
+async function putExpenseFromSaved(name, amount, date) {
+  const day = String(date || today()).slice(0, 10);
   const created = await api("POST", "/transactions", {
     description: name,
     amount,
     type: "expense",
     category: SAVED_MONEY,
-    date: today(),
+    date: day,
   });
   if (created?.id) saveCategory(created.id, SAVED_MONEY);
   chartsNeedDraw = true;
+  if (monthFilter) monthFilter.value = day.slice(0, 7);
   await loadTransactions();
+  monthFilter?.dispatchEvent(new Event("change"));
 }
 
 form?.addEventListener("submit", async (e) => {
@@ -1913,7 +2006,7 @@ form?.addEventListener("submit", async (e) => {
     if (mirror) {
       linkingSaved = true;
       try {
-        await putSavedFromExpense(description, amount);
+        await putSavedFromExpense(description, amount, body.date);
       } finally {
         linkingSaved = false;
       }
@@ -2174,7 +2267,8 @@ function debtCard(debt, bucket) {
   const meta = document.createElement("p");
   meta.className = "debt-meta";
   const parts = [];
-  if (debt.due_date) parts.push(formatDate(debtDay(debt)));
+  if (paid && debt.paid_at) parts.push(formatDate(paidDay(debt)));
+  else if (debt.due_date) parts.push(formatDate(debtDay(debt)));
   if (debt.notes) parts.push(debt.notes);
   meta.textContent = parts.join(" · ") || (paid ? "Quitada" : "Sem vencimento");
   const tags = document.createElement("div");
@@ -2228,8 +2322,8 @@ function monthLabel(key) {
   return `${name} ${year}`;
 }
 
-function renderMonthStack(hostId, items, dayOf, cardFor) {
-  const host = document.getElementById(hostId);
+function renderMonthStack(hostId, items, dayOf, cardFor, options = {}) {
+  const host = typeof hostId === "string" ? document.getElementById(hostId) : hostId;
   if (!host) return;
   const groups = new Map();
   items.forEach((item) => {
@@ -2238,13 +2332,17 @@ function renderMonthStack(hostId, items, dayOf, cardFor) {
     groups.get(key).push(item);
   });
   const now = today().slice(0, 7);
-  const keys = [...groups.keys()].sort((a, b) => (a || "9999").localeCompare(b || "9999"));
+  const keys = [...groups.keys()].sort((a, b) => {
+    const left = a || "9999";
+    const right = b || "9999";
+    return options.history ? right.localeCompare(left) : left.localeCompare(right);
+  });
   host.replaceChildren(...keys.map((key) => {
     const list = groups.get(key).sort((a, b) => String(dayOf(a)).localeCompare(String(dayOf(b))));
     const section = document.createElement("div");
     section.className = "sheet-card debt-group";
-    if (key && key < now) section.classList.add("is-late-month");
-    else if (key === now) section.classList.add("is-current-month");
+    if (!options.history && key && key < now) section.classList.add("is-late-month");
+    else if (!options.history && key === now) section.classList.add("is-current-month");
     const header = document.createElement("div");
     header.className = "chart-header";
     const title = document.createElement("div");
@@ -2252,12 +2350,12 @@ function renderMonthStack(hostId, items, dayOf, cardFor) {
     const heading = document.createElement("h2");
     heading.textContent = monthLabel(key);
     title.appendChild(heading);
-    if (key && key < now) {
+    if (!options.history && key && key < now) {
       const flag = document.createElement("span");
       flag.className = "month-flag";
       flag.textContent = "Atrasado";
       title.appendChild(flag);
-    } else if (key === now) {
+    } else if (!options.history && key === now) {
       const flag = document.createElement("span");
       flag.className = "month-flag";
       flag.textContent = "Este mês";
@@ -2273,6 +2371,44 @@ function renderMonthStack(hostId, items, dayOf, cardFor) {
     section.append(header, body);
     return section;
   }));
+}
+
+function paidDay(debt) {
+  return debt.paid_at ? String(debt.paid_at).slice(0, 10) : debtDay(debt);
+}
+
+function applyPaidFold(card) {
+  const btn = card?.querySelector("[data-paid-toggle]");
+  const body = card?.querySelector("[data-paid-body]");
+  if (!btn || !body) return;
+  const open = localStorage.getItem(`bg-finance-fold-${btn.dataset.paidToggle}`) === "open";
+  card.classList.toggle("is-collapsed", !open);
+  body.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.setAttribute("aria-label", open ? "Esconder pagas" : "Mostrar pagas");
+  btn.innerHTML = open ? ICON.eyeOff : ICON.eye;
+}
+
+function renderPaidSection(cardId, items, dayOf, cardFor) {
+  const card = document.getElementById(cardId);
+  const body = card?.querySelector("[data-paid-body]");
+  const sum = card?.querySelector("[data-sum]");
+  if (!card || !body) return;
+  card.hidden = items.length === 0;
+  renderMonthStack(body, items, dayOf, cardFor, { history: true });
+  if (sum) sum.textContent = items.length ? money(sumDebts(items)) : "";
+  applyPaidFold(card);
+}
+
+function bindPaidFolds() {
+  document.querySelectorAll("[data-paid-toggle]").forEach((btn) => {
+    applyPaidFold(btn.closest(".sheet-card"));
+    btn.addEventListener("click", () => {
+      const key = `bg-finance-fold-${btn.dataset.paidToggle}`;
+      localStorage.setItem(key, localStorage.getItem(key) === "open" ? "closed" : "open");
+      applyPaidFold(btn.closest(".sheet-card"));
+    });
+  });
 }
 
 function fillDebtGroup(id, items, bucket) {
@@ -2315,7 +2451,7 @@ function renderDebts() {
     badge.textContent = urgent > 9 ? "9+" : String(urgent);
   }
   renderMonthStack("debt-months", open, debtDay, (debt) => debtCard(debt, debtBucket(debt)));
-  fillDebtGroup("debt-paid-card", groups.paid, "paid");
+  renderPaidSection("debt-paid-card", groups.paid, paidDay, (debt) => debtCard(debt, "paid"));
   if (empty) empty.hidden = open.length > 0;
 }
 
@@ -2543,14 +2679,41 @@ function subPayloadFrom(sub, extra = {}) {
     active: extra.active !== undefined ? extra.active : sub.active !== false,
     pay_with: extra.pay_with ?? (sub.pay_with === "card" ? "card" : "other"),
     billed_due: extra.billed_due !== undefined ? extra.billed_due : (sub.billed_due ? String(sub.billed_due).slice(0, 10) : ""),
+    paid_dates: extra.paid_dates ?? paidDateList(sub),
   };
+}
+
+function paidDateList(sub) {
+  const raw = sub?.paid_dates;
+  const list = Array.isArray(raw) ? raw : typeof raw === "string" && raw ? safePaidDates(raw) : [];
+  return list.map((day) => String(day).slice(0, 10)).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day));
+}
+
+function safePaidDates(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function paidSubEntries() {
+  const rows = [];
+  subscriptions.forEach((sub) => {
+    paidDateList(sub).forEach((day) => {
+      rows.push({ ...sub, due_date: day, paid_on: day });
+    });
+  });
+  return rows;
 }
 
 function subCard(sub, bucket) {
   const off = bucket === "off";
+  const paid = bucket === "paid";
   const article = document.createElement("article");
-  article.className = `debt-item is-${off ? "off" : bucket}`;
-  const info = off ? { text: "Cancelada", tone: "" } : debtStatus(sub, bucket);
+  article.className = `debt-item is-${paid ? "paid" : off ? "off" : bucket}`;
+  const info = paid ? { text: "Paga", tone: "good" } : off ? { text: "Cancelada", tone: "" } : debtStatus(sub, bucket);
 
   const top = document.createElement("div");
   top.className = "debt-top";
@@ -2563,7 +2726,7 @@ function subCard(sub, bucket) {
   const parts = [];
   if (sub.due_date) parts.push(formatDate(subDay(sub)));
   if (sub.notes) parts.push(sub.notes);
-  meta.textContent = parts.join(" · ") || (off ? "Cancelada" : "Sem data");
+  meta.textContent = parts.join(" · ") || (paid ? "Paga" : off ? "Cancelada" : "Sem data");
   const tags = document.createElement("div");
   tags.className = "debt-tags";
   const cycle = document.createElement("span");
@@ -2588,6 +2751,10 @@ function subCard(sub, bucket) {
 
   const actions = document.createElement("div");
   actions.className = "row-actions";
+  if (paid) {
+    article.append(top);
+    return article;
+  }
   if (off) {
     const reopen = document.createElement("button");
     reopen.type = "button";
@@ -2649,6 +2816,7 @@ function renderSubscriptions() {
     badge.textContent = urgent > 9 ? "9+" : String(urgent);
   }
   renderMonthStack("sub-months", active, subDay, (sub) => subCard(sub, subBucket(sub)));
+  renderPaidSection("sub-paid-card", paidSubEntries(), subDay, (sub) => subCard(sub, "paid"));
   fillSubGroup("sub-off-card", groups.off, "off");
   if (empty) empty.hidden = active.length > 0;
 }
@@ -2764,6 +2932,9 @@ async function registerSubPayment(sub) {
     onPanel = choice === true;
   }
   const nextDue = addCycle(sub.due_date, sub.cycle);
+  const paidDates = paidDateList(sub);
+  const stamp = due || today();
+  if (!paidDates.includes(stamp)) paidDates.push(stamp);
   try {
     let invoiceNameUsed = "";
     if (onInvoice) invoiceNameUsed = await addSubToInvoice(sub);
@@ -2771,6 +2942,7 @@ async function registerSubPayment(sub) {
       due_date: nextDue,
       active: true,
       billed_due: card ? due : "",
+      paid_dates: paidDates,
     }));
     if (onPanel) await addSubExpense(sub);
     await loadSubscriptions();
@@ -2868,6 +3040,7 @@ function bindSubscriptions() {
       active,
       pay_with: payWith,
       billed_due: onInvoice ? subDue.value : (payWith === "card" ? (previous?.billed_due || "") : ""),
+      paid_dates: paidDateList(previous || {}),
     };
     subSubmit.disabled = true;
     try {
@@ -2981,6 +3154,14 @@ function setSaveKind(kind) {
   });
   const current = saveCategorySelect?.selectedOptions[0]?.textContent;
   fillSaveCategory(next, SAVE_CATS[next].includes(current) ? current : SAVE_CATS[next][0]);
+  const piggy = next === "piggy";
+  const editingPiggy = piggy && !!editingSaveId;
+  if (saveAmount) {
+    saveAmount.disabled = editingPiggy;
+    saveAmount.required = !piggy;
+  }
+  const amountLabel = document.querySelector("label[for='save-amount']");
+  if (amountLabel) amountLabel.textContent = piggy && !editingSaveId ? "Primeiro valor" : "Valor guardado";
 }
 
 function resetSaveForm() {
@@ -2991,23 +3172,157 @@ function resetSaveForm() {
   saveCancel?.classList.add("hidden");
 }
 
+const openPiggies = new Set();
+
 function savePayloadFrom(item) {
-  return {
+  const payload = {
     name: item.name,
     kind: item.kind,
     category: item.category,
     amount: Number(item.amount),
     notes: item.notes || "",
   };
+  if (item.kind === "piggy") {
+    payload.entries = (item.entries || []).map((entry) => ({
+      amount: Number(entry.amount),
+      deposited_at: String(entry.deposited_at).slice(0, 10),
+    }));
+  }
+  return payload;
+}
+
+function togglePiggy(id) {
+  if (openPiggies.has(id)) openPiggies.delete(id);
+  else openPiggies.add(id);
+  renderSavings();
+}
+
+async function removePiggyEntry(item, entry) {
+  try {
+    await api("DELETE", `/savings/${item.id}/entries/${entry.id}`);
+    openPiggies.add(item.id);
+    await loadSavings();
+    toast("Depósito excluído", "info", {
+      label: "Desfazer",
+      run: async () => {
+        try {
+          await api("POST", `/savings/${item.id}/entries`, {
+            amount: Number(entry.amount),
+            deposited_at: String(entry.deposited_at).slice(0, 10),
+          });
+          openPiggies.add(item.id);
+          await loadSavings();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      },
+    });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function addPiggyMoney(item, amountInput, dateInput, button) {
+  const amount = parseAmount(amountInput.value);
+  const day = dateInput.value || today();
+  if (Number.isNaN(amount) || amount <= 0) {
+    amountInput.focus();
+    return toast("Valor inválido. Use por exemplo 49,90", "error");
+  }
+  const choice = await askMirrorSaved(item.name, amount, false);
+  if (choice === null) return;
+  button.disabled = true;
+  try {
+    await api("POST", `/savings/${item.id}/entries`, { amount, deposited_at: day });
+    if (choice) {
+      linkingSaved = true;
+      try {
+        await putExpenseFromSaved(item.name, amount, day);
+      } finally {
+        linkingSaved = false;
+      }
+    }
+    openPiggies.add(item.id);
+    amountInput.value = "";
+    toast(`${money(amount)} colocado em ${item.name}`);
+    await loadSavings();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function piggyLog(item) {
+  const box = document.createElement("div");
+  box.className = "piggy-log";
+  const entries = [...(item.entries || [])].sort(
+    (a, b) => String(b.deposited_at).localeCompare(String(a.deposited_at)) || Number(b.id) - Number(a.id)
+  );
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted piggy-empty";
+    empty.textContent = "Nenhum depósito ainda.";
+    box.appendChild(empty);
+  } else {
+    entries.forEach((entry) => {
+      const line = document.createElement("div");
+      line.className = "piggy-entry";
+      const when = document.createElement("span");
+      when.textContent = formatDate(String(entry.deposited_at).slice(0, 10));
+      const value = document.createElement("strong");
+      value.textContent = money(entry.amount);
+      line.append(when, value, debtAction(ICON.trash, "Excluir depósito", () => removePiggyEntry(item, entry), "delete"));
+      box.appendChild(line);
+    });
+  }
+
+  const form = document.createElement("div");
+  form.className = "piggy-add";
+  const amountField = document.createElement("div");
+  amountField.className = "field";
+  const amountLabel = document.createElement("label");
+  amountLabel.textContent = "Valor";
+  const amountInput = document.createElement("input");
+  amountInput.type = "text";
+  amountInput.inputMode = "decimal";
+  amountInput.placeholder = "0,00";
+  amountInput.autocomplete = "off";
+  amountField.append(amountLabel, amountInput);
+
+  const dateField = document.createElement("div");
+  dateField.className = "field";
+  const dateLabel = document.createElement("label");
+  dateLabel.textContent = "Data";
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = today();
+  dateField.append(dateLabel, dateInput);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn secondary";
+  button.textContent = "Colocar no cofrinho";
+  button.addEventListener("click", () => addPiggyMoney(item, amountInput, dateInput, button));
+  form.append(amountField, dateField, button);
+  box.appendChild(form);
+  return box;
 }
 
 function saveRow(item) {
   const row = document.createElement("div");
   row.className = "save-row";
+  const open = item.kind === "piggy" && openPiggies.has(item.id);
+  if (open) row.classList.add("is-open");
   const main = document.createElement("div");
-  const title = document.createElement("div");
-  title.className = "debt-title";
+  const title = document.createElement(item.kind === "piggy" ? "button" : "div");
+  title.className = item.kind === "piggy" ? "debt-title piggy-open" : "debt-title";
   title.textContent = item.name;
+  if (item.kind === "piggy") {
+    title.type = "button";
+    title.setAttribute("aria-expanded", open ? "true" : "false");
+    title.addEventListener("click", () => togglePiggy(item.id));
+  }
   main.appendChild(title);
   if (item.notes) {
     const meta = document.createElement("p");
@@ -3020,11 +3335,17 @@ function saveRow(item) {
   amount.textContent = money(item.amount);
   const actions = document.createElement("div");
   actions.className = "row-actions";
+  if (item.kind === "piggy") {
+    const toggle = debtAction(ICON.chevron, open ? "Esconder depósitos" : "Ver depósitos", () => togglePiggy(item.id), "piggy-toggle");
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    actions.appendChild(toggle);
+  }
   actions.append(
     debtAction(ICON.edit, "Editar", () => startEditSave(item)),
     debtAction(ICON.trash, "Excluir", () => removeSave(item), "delete")
   );
   row.append(main, amount, actions);
+  if (open) row.appendChild(piggyLog(item));
   return row;
 }
 
@@ -3157,21 +3478,26 @@ function bindSavings() {
   saveForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = saveName.value.trim();
-    const amount = parseAmount(saveAmount.value);
+    const kind = saveKind.value || "investment";
+    const creatingPiggy = kind === "piggy" && !editingSaveId;
+    let amount = parseAmount(saveAmount.value);
+    if (creatingPiggy && !String(saveAmount.value || "").trim()) amount = 0;
     if (!name) return toast("Informe o nome", "error");
-    if (Number.isNaN(amount)) {
+    if (Number.isNaN(amount) || amount < 0 || (kind !== "piggy" && amount <= 0)) {
       saveAmount.focus();
       return toast("Valor inválido. Use por exemplo 49,90", "error");
     }
     const body = {
       name,
       amount,
-      kind: saveKind.value || "investment",
+      kind,
       category: saveCategorySelect.value,
       notes: saveNotes.value.trim(),
     };
     const previous = editingSaveId ? savings.find((item) => item.id === editingSaveId) : null;
-    const added = previous ? Math.max(0, amount - Number(previous.amount)) : amount;
+    const editingPiggy = previous?.kind === "piggy" && kind === "piggy";
+    const added = editingPiggy ? 0 : previous ? Math.max(0, amount - Number(previous.amount)) : amount;
+    if (!editingSaveId && kind === "piggy" && amount > 0) body.deposited_at = today();
     let mirror = false;
     if (!linkingSaved && added > 0.009) {
       const choice = await askMirrorSaved(name, Math.round(added * 100) / 100, false);
@@ -3180,12 +3506,14 @@ function bindSavings() {
     }
     saveSubmit.disabled = true;
     try {
-      if (editingSaveId) await api("PUT", `/savings/${editingSaveId}`, body);
-      else await api("POST", "/savings", body);
+      const saved = editingSaveId
+        ? await api("PUT", `/savings/${editingSaveId}`, body)
+        : await api("POST", "/savings", body);
+      if (saved?.kind === "piggy") openPiggies.add(saved.id);
       if (mirror) {
         linkingSaved = true;
         try {
-          await putExpenseFromSaved(name, Math.round(added * 100) / 100);
+          await putExpenseFromSaved(name, Math.round(added * 100) / 100, body.deposited_at || today());
         } finally {
           linkingSaved = false;
         }
@@ -3202,12 +3530,14 @@ function bindSavings() {
 }
 
 (async function init() {
+  if (monthFilter && !monthFilter.value) monthFilter.value = today().slice(0, 7);
   enhanceControls();
   buildChartPrefs();
   applyChartPrefs();
   bindNavigation();
   bindDebts();
   bindSubscriptions();
+  bindPaidFolds();
   bindSavings();
   bindTelegram();
   const start = viewFromHash();

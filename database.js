@@ -72,12 +72,14 @@ async function initDatabase() {
       active BOOLEAN NOT NULL DEFAULT TRUE,
       pay_with VARCHAR(20) NOT NULL DEFAULT 'other',
       billed_due DATE,
+      paid_dates TEXT NOT NULL DEFAULT '[]',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS pay_with VARCHAR(20) NOT NULL DEFAULT 'other'`);
   await pool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billed_due DATE`);
+  await pool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paid_dates TEXT NOT NULL DEFAULT '[]'`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS savings (
@@ -90,6 +92,26 @@ async function initDatabase() {
       notes VARCHAR(240),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS piggy_entries (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      saving_id INTEGER NOT NULL REFERENCES savings(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL,
+      deposited_at DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    INSERT INTO piggy_entries (user_id, saving_id, amount, deposited_at)
+    SELECT s.user_id, s.id, s.amount, (s.created_at AT TIME ZONE 'America/Sao_Paulo')::date
+    FROM savings s
+    WHERE s.kind = 'piggy'
+      AND s.amount > 0
+      AND NOT EXISTS (SELECT 1 FROM piggy_entries e WHERE e.saving_id = s.id)
   `);
 
   await pool.query(`

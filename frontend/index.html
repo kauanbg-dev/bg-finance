@@ -202,7 +202,7 @@
 
     <div class="sheet-card">
       <div class="chart-header">
-        <h2>Lançamentos</h2>
+        <h2 id="tx-heading">Lançamentos</h2>
         <div class="sheet-tools">
           <div class="mobile-only sort-wrap">
             <select id="mobile-sort" aria-label="Ordenar lançamentos">
@@ -386,12 +386,15 @@
 
       <div id="debt-months" class="month-stack"></div>
 
-      <div class="sheet-card debt-group" id="debt-paid-card" hidden>
+      <div class="sheet-card debt-group is-collapsed" id="debt-paid-card" hidden>
         <div class="chart-header">
           <h2>Pagas</h2>
-          <span class="muted" data-sum></span>
+          <div class="paid-tools">
+            <span class="muted" data-sum></span>
+            <button type="button" class="icon-btn paid-toggle" data-paid-toggle="debts" aria-expanded="false" aria-label="Mostrar pagas"></button>
+          </div>
         </div>
-        <div class="debt-list"></div>
+        <div class="month-stack paid-body" data-paid-body hidden></div>
       </div>
     </section>
 
@@ -487,6 +490,17 @@
 
       <div id="sub-months" class="month-stack"></div>
 
+      <div class="sheet-card debt-group is-collapsed" id="sub-paid-card" hidden>
+        <div class="chart-header">
+          <h2>Pagas</h2>
+          <div class="paid-tools">
+            <span class="muted" data-sum></span>
+            <button type="button" class="icon-btn paid-toggle" data-paid-toggle="subs" aria-expanded="false" aria-label="Mostrar pagas"></button>
+          </div>
+        </div>
+        <div class="month-stack paid-body" data-paid-body hidden></div>
+      </div>
+
       <div class="sheet-card debt-group" id="sub-off-card" hidden>
         <div class="chart-header">
           <h2>Canceladas</h2>
@@ -499,7 +513,7 @@
     <section id="view-savings" class="app-view" hidden>
       <header class="view-head">
         <h2>Investimentos</h2>
-        <p class="muted">Investimentos e cofrinhos, somados por categoria.</p>
+        <p class="muted">Investimentos e cofrinhos. Abra um cofrinho para ver cada depósito, com a data.</p>
       </header>
 
       <div class="cards debt-summary">

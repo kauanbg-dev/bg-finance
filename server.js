@@ -822,6 +822,26 @@ app.delete('/debts/:id', authenticateToken, async (req, res) => {
 
 const SUB_CYCLES = ['monthly', 'yearly'];
 
+function cleanPaidDates(value) {
+  let list = value;
+  if (list == null || list === '') return [];
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const item of list.slice(0, 240)) {
+    const day = parseDate(String(item || '').slice(0, 10));
+    if (!day) return null;
+    if (!out.includes(day)) out.push(day);
+  }
+  return out;
+}
+
 function subscriptionPayload(body) {
   const name = String(body.name || '').trim();
   const cycle = String(body.cycle || '').trim();
@@ -832,6 +852,7 @@ function subscriptionPayload(body) {
   const billedRaw = String(body.billed_due || '').trim();
   const billed = billedRaw ? parseDate(billedRaw) : null;
   const payWith = body.pay_with === 'card' ? 'card' : 'other';
+  const paidDates = cleanPaidDates(body.paid_dates);
 
   if (
     !name ||
@@ -842,7 +863,8 @@ function subscriptionPayload(body) {
     amount >= 1e10 ||
     notes.length > 240 ||
     (dueRaw && !due) ||
-    (billedRaw && !billed)
+    (billedRaw && !billed) ||
+    !paidDates
   ) {
     return null;
   }
@@ -856,13 +878,14 @@ function subscriptionPayload(body) {
     active: body.active !== false,
     payWith,
     billedDue: billed,
+    paidDates: JSON.stringify(paidDates),
   };
 }
 
 app.get('/subscriptions', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, created_at
+      `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at
        FROM subscriptions
        WHERE user_id = $1
        ORDER BY active DESC, due_date NULLS LAST, id DESC`,
@@ -881,10 +904,10 @@ app.post('/subscriptions', authenticateToken, async (req, res) => {
 
   try {
     const result = await db.query(
-      `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active, pay_with, billed_due)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, created_at`,
-      [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue]
+      `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active, pay_with, billed_due, paid_dates)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
+      [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates]
     );
     return res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -901,10 +924,10 @@ app.put('/subscriptions/:id', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       `UPDATE subscriptions
-       SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6, pay_with = $7, billed_due = $8
-       WHERE id = $9 AND user_id = $10
-       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, created_at`,
-      [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, id, req.user.id]
+       SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6, pay_with = $7, billed_due = $8, paid_dates = $9
+       WHERE id = $10 AND user_id = $11
+       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
+      [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates, id, req.user.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Assinatura nao encontrada' });
     return res.json(result.rows[0]);
@@ -933,6 +956,31 @@ const SAVE_KINDS = {
   piggy: ['Viagem', 'Casa', 'Carro', 'Estudos', 'Presentes', 'Emergência', 'Dinheiro guardado', 'Outros'],
 };
 
+function saoPauloDay() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+}
+
+function cleanDay(value) {
+  const day = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const [year, month, date] = day.split('-').map(Number);
+  const check = new Date(Date.UTC(year, month - 1, date));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== date) return null;
+  return day;
+}
+
+function normalizePiggyEntries(value) {
+  if (!Array.isArray(value)) return undefined;
+  const list = [];
+  for (const raw of value.slice(0, 240)) {
+    const amount = Math.round(Number(raw?.amount) * 100) / 100;
+    const deposited_at = cleanDay(raw?.deposited_at);
+    if (!Number.isFinite(amount) || amount <= 0 || amount >= 1e10 || !deposited_at) return null;
+    list.push({ amount, deposited_at });
+  }
+  return list;
+}
+
 function savingPayload(body) {
   const name = String(body.name || '').trim();
   const kind = String(body.kind || '').trim();
@@ -940,33 +988,60 @@ function savingPayload(body) {
   const amount = Number(body.amount);
   const notes = String(body.notes || '').trim();
   const allowed = SAVE_KINDS[kind];
+  const amountOk = Number.isFinite(amount) && amount < 1e10 && (kind === 'piggy' ? amount >= 0 : amount > 0);
 
-  if (
-    !name ||
-    name.length > 120 ||
-    !allowed ||
-    !allowed.includes(category) ||
-    !Number.isFinite(amount) ||
-    amount <= 0 ||
-    amount >= 1e10 ||
-    notes.length > 240
-  ) {
+  if (!name || name.length > 120 || !allowed || !allowed.includes(category) || !amountOk || notes.length > 240) {
     return null;
   }
 
-  return { name, kind, category, amount, notes: notes || null };
+  return { name, kind, category, amount: Math.round(amount * 100) / 100, notes: notes || null };
+}
+
+async function listSavings(userId) {
+  const result = await db.query(
+    `SELECT s.id, s.name, s.kind, s.category, s.amount, s.notes, s.created_at,
+            COALESCE(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'id', e.id,
+                    'amount', e.amount,
+                    'deposited_at', to_char(e.deposited_at, 'YYYY-MM-DD')
+                  )
+                  ORDER BY e.deposited_at DESC, e.id DESC
+                )
+                FROM piggy_entries e
+                WHERE e.saving_id = s.id
+              ),
+              '[]'::json
+            ) AS entries
+     FROM savings s
+     WHERE s.user_id = $1
+     ORDER BY s.kind, s.category, s.id DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
+async function insertPiggyEntries(userId, savingId, entries) {
+  for (const entry of entries) {
+    await db.query(
+      `INSERT INTO piggy_entries (user_id, saving_id, amount, deposited_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, savingId, entry.amount, entry.deposited_at]
+    );
+  }
+  await db.query(
+    `UPDATE savings
+     SET amount = COALESCE((SELECT SUM(amount) FROM piggy_entries WHERE saving_id = $1), 0)
+     WHERE id = $1 AND user_id = $2`,
+    [savingId, userId]
+  );
 }
 
 app.get('/savings', authenticateToken, async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT id, name, kind, category, amount, notes, created_at
-       FROM savings
-       WHERE user_id = $1
-       ORDER BY kind, category, id DESC`,
-      [req.user.id]
-    );
-    return res.json(result.rows);
+    return res.json(await listSavings(req.user.id));
   } catch (err) {
     console.error('Erro ao listar guardado:', err);
     return res.status(500).json({ error: 'Erro ao listar guardado' });
@@ -976,15 +1051,23 @@ app.get('/savings', authenticateToken, async (req, res) => {
 app.post('/savings', authenticateToken, async (req, res) => {
   const item = savingPayload(req.body || {});
   if (!item) return res.status(400).json({ error: 'Dados invalidos' });
+  const listed = item.kind === 'piggy' ? normalizePiggyEntries(req.body?.entries) : undefined;
+  if (listed === null) return res.status(400).json({ error: 'Dados invalidos' });
 
   try {
     const result = await db.query(
       `INSERT INTO savings (user_id, name, kind, category, amount, notes)
        VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, name, kind, category, amount, notes, created_at`,
+       RETURNING id`,
       [req.user.id, item.name, item.kind, item.category, item.amount, item.notes]
     );
-    return res.status(201).json(result.rows[0]);
+    const id = result.rows[0].id;
+    if (item.kind === 'piggy') {
+      const entries = listed || (item.amount > 0 ? [{ amount: item.amount, deposited_at: cleanDay(req.body?.deposited_at) || saoPauloDay() }] : []);
+      if (entries.length) await insertPiggyEntries(req.user.id, id, entries);
+    }
+    const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
+    return res.status(201).json(saved);
   } catch (err) {
     console.error('Erro ao criar guardado:', err);
     return res.status(500).json({ error: 'Erro ao criar guardado' });
@@ -997,15 +1080,25 @@ app.put('/savings/:id', authenticateToken, async (req, res) => {
   if (!id || !item) return res.status(400).json({ error: 'Dados invalidos' });
 
   try {
-    const result = await db.query(
+    const current = await db.query('SELECT kind, amount FROM savings WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (!current.rows[0]) return res.status(404).json({ error: 'Item nao encontrado' });
+    const amount = item.kind === 'piggy' ? current.rows[0].amount : item.amount;
+    await db.query(
       `UPDATE savings
        SET name = $1, kind = $2, category = $3, amount = $4, notes = $5
-       WHERE id = $6 AND user_id = $7
-       RETURNING id, name, kind, category, amount, notes, created_at`,
-      [item.name, item.kind, item.category, item.amount, item.notes, id, req.user.id]
+       WHERE id = $6 AND user_id = $7`,
+      [item.name, item.kind, item.category, amount, item.notes, id, req.user.id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Item nao encontrado' });
-    return res.json(result.rows[0]);
+    if (item.kind === 'piggy') {
+      const count = await db.query('SELECT COUNT(*)::int AS n FROM piggy_entries WHERE saving_id = $1', [id]);
+      if (count.rows[0].n === 0 && Number(amount) > 0) {
+        await insertPiggyEntries(req.user.id, id, [{ amount: Number(amount), deposited_at: saoPauloDay() }]);
+      }
+    } else {
+      await db.query('DELETE FROM piggy_entries WHERE saving_id = $1 AND user_id = $2', [id, req.user.id]);
+    }
+    const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
+    return res.json(saved);
   } catch (err) {
     console.error('Erro ao editar guardado:', err);
     return res.status(500).json({ error: 'Erro ao editar guardado' });
@@ -1023,6 +1116,55 @@ app.delete('/savings/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Erro ao excluir guardado:', err);
     return res.status(500).json({ error: 'Erro ao excluir guardado' });
+  }
+});
+
+app.post('/savings/:id/entries', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+  const depositedAt = cleanDay(req.body?.deposited_at);
+  if (!id || !Number.isFinite(amount) || amount <= 0 || amount >= 1e10 || !depositedAt) {
+    return res.status(400).json({ error: 'Dados invalidos' });
+  }
+
+  try {
+    const current = await db.query(
+      `SELECT id FROM savings WHERE id = $1 AND user_id = $2 AND kind = 'piggy'`,
+      [id, req.user.id]
+    );
+    if (!current.rows[0]) return res.status(404).json({ error: 'Cofrinho nao encontrado' });
+    await insertPiggyEntries(req.user.id, id, [{ amount, deposited_at: depositedAt }]);
+    const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
+    return res.status(201).json(saved);
+  } catch (err) {
+    console.error('Erro ao guardar no cofrinho:', err);
+    return res.status(500).json({ error: 'Erro ao guardar no cofrinho' });
+  }
+});
+
+app.delete('/savings/:id/entries/:entryId', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const entryId = Number(req.params.entryId);
+  if (!id || !entryId) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `DELETE FROM piggy_entries e
+       USING savings s
+       WHERE e.id = $1 AND e.saving_id = $2 AND s.id = e.saving_id AND s.user_id = $3 AND s.kind = 'piggy'`,
+      [entryId, id, req.user.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Deposito nao encontrado' });
+    await db.query(
+      `UPDATE savings
+       SET amount = COALESCE((SELECT SUM(amount) FROM piggy_entries WHERE saving_id = $1), 0)
+       WHERE id = $1 AND user_id = $2`,
+      [id, req.user.id]
+    );
+    return res.json({ deleted: result.rowCount });
+  } catch (err) {
+    console.error('Erro ao excluir deposito:', err);
+    return res.status(500).json({ error: 'Erro ao excluir deposito' });
   }
 });
 

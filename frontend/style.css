@@ -1778,6 +1778,53 @@ html[data-theme="light"] .card.save-piggy p{ color: #b45309; }
 }
 .save-row .debt-title{ font-size: 14px; }
 .save-row .debt-amount{ font-size: 15px; }
+.save-row{ flex-wrap: wrap; }
+.save-row.is-open{ align-items: flex-start; }
+button.piggy-open{
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.piggy-toggle svg{ transition: transform .15s ease; }
+.piggy-toggle[aria-expanded="true"] svg{ transform: rotate(180deg); }
+.piggy-log{
+  flex: 1 0 100%;
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--wash), .08);
+}
+.piggy-entry{
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.piggy-empty{ margin: 0; font-size: 13px; }
+.piggy-add{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+.piggy-add .btn{ grid-column: 1 / -1; min-height: 44px; }
+.sheet tr.month-row td{
+  padding-top: 16px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: var(--muted, #94a3b8);
+  background: transparent;
+  border-bottom: 0;
+}
 html[data-theme="light"] .card.debt-soon p{ color: #b45309; }
 html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 
@@ -1836,6 +1883,10 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
 .debt-group{ margin-bottom: 12px; }
 .month-stack .debt-group{ margin: 0; }
 .month-title{ display: flex; align-items: center; gap: 8px; min-width: 0; }
+.paid-tools{ display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.paid-toggle{ display: inline-flex; align-items: center; justify-content: center; }
+.sheet-card.is-collapsed > .chart-header{ margin-bottom: 0; }
+.paid-body .debt-group{ margin: 0; }
 .month-flag{
   padding: 3px 8px;
   border-radius: 99px;
