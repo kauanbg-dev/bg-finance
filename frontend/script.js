@@ -4367,7 +4367,15 @@ function invoiceRow(debt) {
   const amount = document.createElement("div");
   amount.className = "charge-amount";
   amount.textContent = money(debt.amount);
-  row.append(name, amount, meta);
+  const actions = document.createElement("div");
+  actions.className = "charge-actions";
+  const pay = document.createElement("button");
+  pay.type = "button";
+  pay.className = "pay-btn";
+  pay.textContent = "Paguei";
+  pay.addEventListener("click", () => setDebtPaid(debt, true));
+  actions.append(pay);
+  row.append(name, amount, meta, actions);
   return row;
 }
 
