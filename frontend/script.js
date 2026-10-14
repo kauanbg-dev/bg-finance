@@ -2432,6 +2432,7 @@ function renderMonthStack(hostId, items, dayOf, cardFor, options = {}) {
     const right = b || "9999";
     return options.history ? right.localeCompare(left) : left.localeCompare(right);
   });
+  const scope = options.fold || (typeof hostId === "string" ? hostId : "months");
   host.replaceChildren(...keys.map((key) => {
     const list = groups.get(key).sort((a, b) => String(dayOf(a)).localeCompare(String(dayOf(b))));
     const section = document.createElement("div");
@@ -2459,13 +2460,42 @@ function renderMonthStack(hostId, items, dayOf, cardFor, options = {}) {
     const sum = document.createElement("span");
     sum.className = "muted";
     sum.textContent = money(sumDebts(list));
-    header.append(title, sum);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "icon-btn paid-toggle";
+    toggle.addEventListener("click", () => {
+      const storage = foldStorageKey(scope, key);
+      const open = localStorage.getItem(storage) !== "closed";
+      localStorage.setItem(storage, open ? "closed" : "open");
+      applyMonthFold(section, scope, key);
+    });
+    const tools = document.createElement("div");
+    tools.className = "paid-tools";
+    tools.append(sum, toggle);
+    header.append(title, tools);
     const body = document.createElement("div");
     body.className = "debt-list";
     body.append(...list.map((item) => cardFor(item)));
     section.append(header, body);
+    applyMonthFold(section, scope, key);
     return section;
   }));
+}
+
+function foldStorageKey(scope, key) {
+  return `bg-finance-fold-${scope}-${key || "none"}`;
+}
+
+function applyMonthFold(section, scope, key) {
+  const btn = section.querySelector(".paid-toggle");
+  const body = section.querySelector(".debt-list");
+  if (!btn || !body) return;
+  const open = localStorage.getItem(foldStorageKey(scope, key)) !== "closed";
+  section.classList.toggle("is-collapsed", !open);
+  body.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.setAttribute("aria-label", open ? "Esconder" : "Mostrar");
+  btn.innerHTML = open ? ICON.eyeOff : ICON.eye;
 }
 
 function paidDay(debt) {
@@ -2490,7 +2520,7 @@ function renderPaidSection(cardId, items, dayOf, cardFor) {
   const sum = card?.querySelector("[data-sum]");
   if (!card || !body) return;
   card.hidden = items.length === 0;
-  renderMonthStack(body, items, dayOf, cardFor, { history: true });
+  renderMonthStack(body, items, dayOf, cardFor, { history: true, fold: `${cardId}-months` });
   if (sum) sum.textContent = items.length ? money(sumDebts(items)) : "";
   applyPaidFold(card);
 }
