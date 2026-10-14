@@ -282,12 +282,22 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
     dialogOk.textContent = okLabel;
     dialogCancel.textContent = cancelLabel;
     dialogOk.classList.toggle("danger", danger);
+    dialog.classList.add("dialog-arming");
     dialog.classList.remove("hidden");
-    (input ? dialogInput : dialogOk).focus();
+    let armed = false;
+    const arm = () => {
+      if (armed || dialog.classList.contains("hidden")) return;
+      armed = true;
+      dialog.classList.remove("dialog-arming");
+      (input ? dialogInput : dialogTitle).focus();
+    };
+    const armTimer = setTimeout(arm, 380);
 
     const backdrop = dialog.querySelector(".modal-backdrop");
     const finish = (value) => {
+      clearTimeout(armTimer);
       dialog.classList.add("hidden");
+      dialog.classList.remove("dialog-arming");
       dialogInput.type = "text";
       dialogOk.classList.remove("danger");
       dialogCancel.textContent = "Cancelar";
@@ -299,10 +309,17 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
     };
     const onSubmit = (e) => {
       e.preventDefault();
+      if (!armed) return;
       finish(input ? dialogInput.value.trim() : true);
     };
-    const onCancel = () => finish(false);
-    const onDismiss = () => finish(null);
+    const onCancel = () => {
+      if (!armed) return;
+      finish(false);
+    };
+    const onDismiss = () => {
+      if (!armed) return;
+      finish(null);
+    };
     dialogForm.addEventListener("submit", onSubmit);
     dialogCancel.addEventListener("click", onCancel);
     backdrop.addEventListener("click", onDismiss);
@@ -1946,6 +1963,34 @@ function askMirrorSaved(description, amount, toSaved) {
   });
 }
 
+function sameMoney(a, b) {
+  return Math.round(Number(a) * 100) === Math.round(Number(b) * 100);
+}
+
+function panelTwin(description, amount, date) {
+  const day = String(date || today()).slice(0, 10);
+  return allTransactions.some(
+    (item) => catKey(item.description) === catKey(description) && sameMoney(item.amount, amount) && txDate(item) === day
+  );
+}
+
+function piggyTwin(item, amount, date) {
+  const day = String(date || today()).slice(0, 10);
+  return (item?.entries || []).some(
+    (entry) => sameMoney(entry.amount, amount) && String(entry.deposited_at).slice(0, 10) === day
+  );
+}
+
+function askSameEntry(description, amount, date, where) {
+  const day = formatDate(String(date || today()).slice(0, 10));
+  return askDialog({
+    title: "Já existe um igual",
+    text: `Já tem ${money(amount)} de ${description} em ${day} ${where}. Quer lançar mesmo assim?`,
+    okLabel: "Lançar mesmo assim",
+    cancelLabel: "Não lançar",
+  });
+}
+
 async function putSavedFromExpense(description, amount, date) {
   const day = String(date || today()).slice(0, 10);
   const current = savings.find(
@@ -1992,6 +2037,10 @@ form?.addEventListener("submit", async (e) => {
     return toast("Valor inválido. Use por exemplo 49,90", "error");
   }
   const body = txBody({ description, amount, type: typeInput.value, select: categorySelect, date: dateInput.value || today() });
+  if (panelTwin(description, amount, body.date)) {
+    const again = await askSameEntry(description, amount, body.date, "no painel");
+    if (again !== true) return;
+  }
   let mirror = false;
   if (!linkingSaved && body.type === "expense" && isSavedMoney(body.category) && amount > 0) {
     const choice = await askMirrorSaved(description, amount, true);
@@ -2011,10 +2060,7 @@ form?.addEventListener("submit", async (e) => {
         linkingSaved = false;
       }
     }
-    descriptionInput.value = "";
-    amountInput.value = "";
-    categoryTouched = false;
-    descriptionInput.focus();
+    resetTransactionForm();
     toast(`${body.type === "income" ? "Receita" : "Despesa"} de ${money(amount)} adicionada`);
     await loadTransactions();
   } catch (err) {
@@ -2027,10 +2073,59 @@ form?.addEventListener("submit", async (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  document.querySelectorAll(".menu-select.open, .month-picker.open").forEach((el) => el.classList.remove("open"));
+  const openMenus = document.querySelectorAll(".menu-select.open, .month-picker.open");
+  if (openMenus.length) {
+    openMenus.forEach((el) => el.classList.remove("open"));
+    return;
+  }
   if (closeActiveDialog) closeActiveDialog();
   else if (!editModal.classList.contains("hidden")) closeEditModal();
+  else closeOpenEntryForm();
 });
+
+function openEntryForm(target, focus) {
+  if (!target) return;
+  target.classList.remove("hidden");
+  const launch = document.querySelector(`[data-open-form="${target.id}"]`);
+  if (launch) launch.hidden = true;
+  const field = focus || target.querySelector("input:not([type='hidden']):not(:disabled)");
+  requestAnimationFrame(() => {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    field?.focus({ preventScroll: true });
+  });
+}
+
+function closeEntryForm(target) {
+  if (!target) return;
+  target.classList.add("hidden");
+  const launch = document.querySelector(`[data-open-form="${target.id}"]`);
+  if (launch) launch.hidden = false;
+}
+
+function resetTransactionForm() {
+  if (descriptionInput) descriptionInput.value = "";
+  if (amountInput) amountInput.value = "";
+  categoryTouched = false;
+  if (dateInput) dateInput.value = today();
+  setType("income");
+  closeEntryForm(form);
+}
+
+function closeOpenEntryForm() {
+  const openForm = document.querySelector(".app-view:not([hidden]) form.entry-form:not(.hidden)");
+  if (!openForm) return;
+  if (openForm.id === "transaction-form") resetTransactionForm();
+  else if (openForm.id === "debt-form") resetDebtForm();
+  else if (openForm.id === "sub-form") resetSubForm();
+  else if (openForm.id === "save-form") resetSaveForm();
+}
+
+function bindEntryForms() {
+  document.querySelectorAll("[data-open-form]").forEach((btn) => {
+    btn.addEventListener("click", () => openEntryForm(document.getElementById(btn.dataset.openForm)));
+  });
+  document.getElementById("tx-cancel")?.addEventListener("click", resetTransactionForm);
+}
 
 /* ---------- menu, dívidas e ajustes ---------- */
 
@@ -2195,7 +2290,7 @@ function resetDebtForm() {
   setDebtKind("credit_card");
   setDebtPaidFlag(false);
   if (debtSubmit) debtSubmit.textContent = "Adicionar dívida";
-  debtCancel?.classList.add("hidden");
+  closeEntryForm(debtForm);
 }
 
 function dueMeta(iso) {
@@ -2544,9 +2639,7 @@ function startEditDebt(debt) {
   setDebtKind(DEBT_KINDS[debt.kind] ? debt.kind : "other");
   setDebtPaidFlag(Boolean(debt.paid_at));
   debtSubmit.textContent = "Salvar";
-  debtCancel.classList.remove("hidden");
-  debtForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  debtName.focus();
+  openEntryForm(debtForm, debtName);
 }
 
 function bindDebts() {
@@ -2652,7 +2745,7 @@ function resetSubForm() {
   setSubActive(true);
   setSubPay("other");
   if (subSubmit) subSubmit.textContent = "Adicionar assinatura";
-  subCancel?.classList.add("hidden");
+  closeEntryForm(subForm);
 }
 
 function subDay(sub) {
@@ -2997,9 +3090,7 @@ function startEditSub(sub) {
   setSubActive(sub.active !== false);
   setSubPay(sub.pay_with);
   subSubmit.textContent = "Salvar";
-  subCancel.classList.remove("hidden");
-  subForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  subName.focus();
+  openEntryForm(subForm, subName);
 }
 
 function bindSubscriptions() {
@@ -3169,7 +3260,7 @@ function resetSaveForm() {
   saveForm?.reset();
   setSaveKind("investment");
   if (saveSubmit) saveSubmit.textContent = "Adicionar";
-  saveCancel?.classList.add("hidden");
+  closeEntryForm(saveForm);
 }
 
 const openPiggies = new Set();
@@ -3229,8 +3320,16 @@ async function addPiggyMoney(item, amountInput, dateInput, button) {
     amountInput.focus();
     return toast("Valor inválido. Use por exemplo 49,90", "error");
   }
+  if (piggyTwin(item, amount, day)) {
+    const again = await askSameEntry(item.name, amount, day, "neste cofrinho");
+    if (again !== true) return;
+  }
   const choice = await askMirrorSaved(item.name, amount, false);
   if (choice === null) return;
+  if (choice && panelTwin(item.name, amount, day)) {
+    const again = await askSameEntry(item.name, amount, day, "no painel");
+    if (again !== true) return;
+  }
   button.disabled = true;
   try {
     await api("POST", `/savings/${item.id}/entries`, { amount, deposited_at: day });
@@ -3301,11 +3400,35 @@ function piggyLog(item) {
 
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "btn secondary";
+  button.className = "btn primary";
   button.textContent = "Colocar no cofrinho";
   button.addEventListener("click", () => addPiggyMoney(item, amountInput, dateInput, button));
-  form.append(amountField, dateField, button);
-  box.appendChild(form);
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn secondary";
+  cancel.textContent = "Cancelar";
+  const actions = document.createElement("div");
+  actions.className = "entry-actions";
+  actions.append(cancel, button);
+  form.append(amountField, dateField, actions);
+  form.hidden = true;
+
+  const launch = document.createElement("button");
+  launch.type = "button";
+  launch.className = "add-launch add-launch-compact";
+  launch.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Colocar dinheiro</span>`;
+  launch.addEventListener("click", () => {
+    launch.hidden = true;
+    form.hidden = false;
+    amountInput.focus();
+  });
+  cancel.addEventListener("click", () => {
+    amountInput.value = "";
+    dateInput.value = today();
+    form.hidden = true;
+    launch.hidden = false;
+  });
+  box.append(launch, form);
   return box;
 }
 
@@ -3464,9 +3587,7 @@ function startEditSave(item) {
   setSaveKind(item.kind);
   fillSaveCategory(item.kind, item.category);
   saveSubmit.textContent = "Salvar";
-  saveCancel.classList.remove("hidden");
-  saveForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  saveName.focus();
+  openEntryForm(saveForm, saveName);
 }
 
 function bindSavings() {
@@ -3499,10 +3620,16 @@ function bindSavings() {
     const added = editingPiggy ? 0 : previous ? Math.max(0, amount - Number(previous.amount)) : amount;
     if (!editingSaveId && kind === "piggy" && amount > 0) body.deposited_at = today();
     let mirror = false;
+    const addedAmount = Math.round(added * 100) / 100;
+    const addedDay = body.deposited_at || today();
     if (!linkingSaved && added > 0.009) {
-      const choice = await askMirrorSaved(name, Math.round(added * 100) / 100, false);
+      const choice = await askMirrorSaved(name, addedAmount, false);
       if (choice === null) return;
       mirror = choice === true;
+      if (mirror && panelTwin(name, addedAmount, addedDay)) {
+        const again = await askSameEntry(name, addedAmount, addedDay, "no painel");
+        if (again !== true) return;
+      }
     }
     saveSubmit.disabled = true;
     try {
@@ -3513,7 +3640,7 @@ function bindSavings() {
       if (mirror) {
         linkingSaved = true;
         try {
-          await putExpenseFromSaved(name, Math.round(added * 100) / 100, body.deposited_at || today());
+          await putExpenseFromSaved(name, addedAmount, addedDay);
         } finally {
           linkingSaved = false;
         }
@@ -3534,6 +3661,7 @@ function bindSavings() {
   enhanceControls();
   buildChartPrefs();
   applyChartPrefs();
+  bindEntryForms();
   bindNavigation();
   bindDebts();
   bindSubscriptions();
