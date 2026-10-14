@@ -241,6 +241,12 @@
       <button type="button" class="btn secondary show-more hidden" id="show-more">Mostrar mais</button>
     </div>
 
+    <div class="charts-fold" id="charts-fold">
+      <div class="charts-fold-head">
+        <h2>Gráficos</h2>
+        <button type="button" class="charts-toggle" id="charts-toggle" aria-expanded="false" aria-controls="charts-body" aria-label="Mostrar gráficos">Mostrar</button>
+      </div>
+      <div id="charts-body" hidden>
     <p id="charts-off" class="empty-note" hidden>Os gráficos estão desligados. Você liga de novo em Ajustes.</p>
     <div class="charts-grid">
       <div class="chart-card" data-chart="flow">
@@ -286,13 +292,14 @@
         </div>
       </div>
     </div>
-
-    <div class="sheet-card">
-      <div class="chart-header">
-        <h2>Tabela dinâmica</h2>
-        <p class="muted">Categoria × mês, como uma pivot do Excel</p>
+      <div class="sheet-card pivot-card">
+        <div class="chart-header">
+          <h2>Tabela dinâmica</h2>
+          <p class="muted">Categoria × mês, como uma pivot do Excel</p>
+        </div>
+        <div class="table-wrap" id="pivot-wrap"></div>
       </div>
-      <div class="table-wrap" id="pivot-wrap"></div>
+      </div>
     </div>
 
     <footer class="app-footer">
@@ -313,6 +320,18 @@
         <h2>Dívidas</h2>
         <p class="muted">Cartão, empréstimo ou qualquer valor que ainda falta pagar.</p>
       </header>
+
+      <button type="button" class="wallet-open" id="open-cards">
+        <span class="wallet-open-chip" aria-hidden="true"></span>
+        <span class="wallet-open-copy">
+          <strong>Cartão de crédito</strong>
+          <span id="wallet-open-hint">Limite, fatura e extrato</span>
+        </span>
+        <span class="wallet-open-end">
+          <span id="wallet-open-brand"></span>
+          <span id="wallet-open-digits"></span>
+        </span>
+      </button>
 
       <div class="cards debt-summary">
         <div class="card expense">
@@ -375,6 +394,13 @@
             <button type="button" class="seg-btn" data-kind="other">Outro</button>
           </div>
         </div>
+        <div class="field f-card" id="debt-card-field">
+          <label for="debt-card">Qual cartão</label>
+          <select id="debt-card">
+            <option value="">Nenhum cartão cadastrado</option>
+          </select>
+          <p class="field-hint">Ao confirmar o pagamento, a fatura desse cartão fica paga e o limite volta.</p>
+        </div>
         <div class="field f-status">
           <label>Situação</label>
           <input type="hidden" id="debt-paid" value="0">
@@ -406,6 +432,128 @@
           </div>
         </div>
         <div class="month-stack paid-body" data-paid-body hidden></div>
+      </div>
+    </section>
+
+    <section id="view-cards" class="app-view" hidden>
+      <header class="view-head cards-head">
+        <button type="button" class="icon-btn" id="cards-back" aria-label="Voltar para dívidas">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <div>
+          <h2>Cartão de crédito</h2>
+          <p class="muted">Limite, fatura, o que vai pagar e o que já pagou.</p>
+        </div>
+      </header>
+
+      <div id="card-switch" class="card-switch" hidden></div>
+      <div id="plastic-host"></div>
+      <p id="card-empty" class="empty-note">Nenhum cartão ainda. Cadastre a empresa, a bandeira e os 4 últimos números.</p>
+
+      <button type="button" class="add-launch add-launch-main" data-open-form="card-form">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Adicionar cartão
+      </button>
+      <form id="card-form" class="entry-form card-form hidden">
+        <div class="field">
+          <label for="card-issuer">Empresa</label>
+          <input type="text" id="card-issuer" maxlength="80" placeholder="Nubank, Itaú, Inter…" autocomplete="off" required>
+        </div>
+        <div class="field">
+          <label>Bandeira</label>
+          <input type="hidden" id="card-brand" value="visa">
+          <div class="segmented" role="group" aria-label="Bandeira">
+            <button type="button" class="seg-btn active" data-brand="visa">Visa</button>
+            <button type="button" class="seg-btn" data-brand="mastercard">Master</button>
+            <button type="button" class="seg-btn" data-brand="elo">Elo</button>
+            <button type="button" class="seg-btn" data-brand="amex">Amex</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="card-last4">Últimos 4 números</label>
+          <input type="text" id="card-last4" inputmode="numeric" maxlength="4" placeholder="4532" autocomplete="off" required>
+        </div>
+        <div class="field">
+          <label for="card-limit">Limite (R$)</label>
+          <input type="text" id="card-limit" inputmode="decimal" placeholder="8.000,00" autocomplete="off" required>
+        </div>
+        <div class="debt-form-actions">
+          <button type="button" class="btn secondary" id="card-cancel">Cancelar</button>
+          <button class="btn primary" type="submit" id="card-submit">Salvar cartão</button>
+        </div>
+      </form>
+
+      <div id="card-panel" hidden>
+        <div class="limit-card">
+          <div class="limit-top">
+            <span>Limite</span>
+            <strong id="limit-total">R$ 0,00</strong>
+          </div>
+          <div class="limit-bar" aria-hidden="true"><span id="limit-fill"></span></div>
+          <div class="limit-meta">
+            <span id="limit-used">Fatura R$ 0,00</span>
+            <span id="limit-free">Livre R$ 0,00</span>
+          </div>
+        </div>
+
+        <div class="cards card-totals">
+          <div class="card expense">
+            <div class="card-top"><h3>A pagar</h3></div>
+            <p id="card-open-sum">R$ 0,00</p>
+            <span class="card-hint" id="card-open-hint">Nada na fatura</span>
+          </div>
+          <div class="card income">
+            <div class="card-top"><h3>Pago</h3></div>
+            <p id="card-paid-sum">R$ 0,00</p>
+            <span class="card-hint" id="card-paid-hint">Nada pago</span>
+          </div>
+        </div>
+
+        <button type="button" class="add-launch" data-open-form="charge-form">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          Lançar no extrato
+        </button>
+        <form id="charge-form" class="entry-form hidden">
+          <div class="field">
+            <label for="charge-description">Descrição</label>
+            <input type="text" id="charge-description" maxlength="120" placeholder="Mercado, posto, farmácia…" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="charge-amount">Valor (R$)</label>
+            <input type="text" id="charge-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="charge-date">Data</label>
+            <input type="date" id="charge-date">
+          </div>
+          <div class="field">
+            <label>Situação</label>
+            <input type="hidden" id="charge-paid" value="0">
+            <div class="segmented" role="group" aria-label="Situação do lançamento">
+              <button type="button" class="seg-btn active" data-charge-paid="0">A pagar</button>
+              <button type="button" class="seg-btn" data-charge-paid="1">Já paguei</button>
+            </div>
+          </div>
+          <div class="debt-form-actions">
+            <button type="button" class="btn secondary" id="charge-cancel">Cancelar</button>
+            <button class="btn primary" type="submit">Adicionar</button>
+          </div>
+        </form>
+
+        <div class="sheet-card">
+          <div class="chart-header">
+            <h2>Extrato</h2>
+            <p class="muted">O que ainda entra na fatura e o que já foi pago.</p>
+          </div>
+          <h3 class="charge-label">A pagar</h3>
+          <div id="charge-open" class="charge-list"></div>
+          <p id="charge-open-empty" class="empty-note">Nada a pagar neste cartão.</p>
+          <h3 class="charge-label">Pago</h3>
+          <div id="charge-paid" class="charge-list"></div>
+          <p id="charge-paid-empty" class="empty-note">Nenhum pagamento ainda.</p>
+        </div>
+
+        <button type="button" class="btn danger card-remove" id="card-remove">Excluir este cartão</button>
       </div>
     </section>
 
@@ -628,6 +776,7 @@
           <h2>Telegram</h2>
           <p class="muted" id="telegram-status">Carregando…</p>
         </div>
+        <a class="btn secondary tg-open" id="telegram-open" href="https://t.me/bgfinance_bot" target="_blank" rel="noopener" hidden>Abrir o bot no Telegram</a>
         <ul class="tg-commands">
           <li><code>/saldo</code> receitas, despesas e saldo do mês</li>
           <li><code>/dividas</code> o que ainda está em aberto</li>
