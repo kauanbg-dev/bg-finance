@@ -4191,7 +4191,7 @@ function setCardColor(color) {
 }
 
 function setChargePaidFlag(paid) {
-  const input = document.getElementById("charge-paid");
+  const input = document.getElementById("charge-paid-flag");
   if (input) input.value = paid ? "1" : "0";
   document.querySelectorAll("#charge-form [data-charge-paid]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.chargePaid === (paid ? "1" : "0"));
@@ -4263,6 +4263,73 @@ function chargeSum(charges, paid) {
 
 function cardInvoices(card) {
   return debts.filter((debt) => debt.kind === "credit_card" && String(debt.card_id || "") === String(card.id) && !debt.paid_at);
+}
+
+function cardDebtList(card) {
+  return debts.filter((debt) => debt.kind === "credit_card" && String(debt.card_id || "") === String(card.id));
+}
+
+function invoiceIsFuture(debt) {
+  const due = String(debt.due_date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return false;
+  return due.slice(0, 7) > today().slice(0, 7);
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+async function saveInvoice(debt, amount, paid) {
+  await api("PUT", `/debts/${debt.id}`, debtPayloadFrom({ ...debt, amount }, paid));
+}
+
+async function applyChargeToInvoices(card, amount, paying) {
+  const value = roundMoney(amount);
+  if (!card || !(value > 0)) return false;
+  const open = cardDebtList(card)
+    .filter((debt) => !debt.paid_at)
+    .sort((a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+  if (paying) {
+    let left = value;
+    let changed = false;
+    for (const debt of open) {
+      if (left <= 0.009) break;
+      const current = roundMoney(debt.amount);
+      const take = Math.min(current, left);
+      if (take <= 0.009) continue;
+      const next = roundMoney(current - take);
+      left = roundMoney(left - take);
+      if (next <= 0.009) await saveInvoice(debt, current, true);
+      else await saveInvoice(debt, next, false);
+      debt.amount = next <= 0.009 ? current : next;
+      debt.paid_at = next <= 0.009 ? debt.paid_at || new Date().toISOString() : null;
+      changed = true;
+    }
+    return changed;
+  }
+  const statement = open.find((debt) => !invoiceIsFuture(debt));
+  if (statement) {
+    const next = roundMoney(Number(statement.amount) + value);
+    await saveInvoice(statement, next, false);
+    statement.amount = next;
+    return true;
+  }
+  const paid = cardDebtList(card)
+    .filter((debt) => debt.paid_at && !invoiceIsFuture(debt))
+    .sort((a, b) => String(b.paid_at).localeCompare(String(a.paid_at)));
+  if (paid[0]) {
+    await saveInvoice(paid[0], value, false);
+    paid[0].amount = value;
+    paid[0].paid_at = null;
+    return true;
+  }
+  if (open[0]) {
+    const next = roundMoney(Number(open[0].amount) + value);
+    await saveInvoice(open[0], next, false);
+    open[0].amount = next;
+    return true;
+  }
+  return false;
 }
 
 function cardLimitUse(card) {
@@ -4358,6 +4425,8 @@ function renderCardsView() {
     return btn;
   }));
   host.replaceChildren();
+  const edit = document.getElementById("card-edit");
+  if (edit) edit.hidden = !card;
   if (!card) return;
   const plastic = document.createElement("article");
   plastic.className = `plastic brand-${card.brand}`;
@@ -4466,8 +4535,10 @@ async function setChargePaid(card, charge, paid) {
       spent_at: String(charge.spent_at).slice(0, 10),
       paid,
     });
+    const changed = await applyChargeToInvoices(card, charge.amount, paid);
     await loadCards();
-    toast(paid ? "Marcado como pago" : "Voltou para a fatura");
+    if (changed) await loadDebts();
+    toast(paid ? (changed ? "Pago e a fatura diminuiu" : "Marcado como pago") : "Voltou para a fatura");
   } catch (err) {
     toast(err.message, "error");
   }
@@ -4475,8 +4546,11 @@ async function setChargePaid(card, charge, paid) {
 
 async function removeCharge(card, charge) {
   try {
+    const unpaid = !charge.paid_at;
     await api("DELETE", `/cards/${card.id}/charges/${charge.id}`);
+    if (unpaid) await applyChargeToInvoices(card, charge.amount, true);
     await loadCards();
+    if (unpaid) await loadDebts();
     toast(`"${charge.description}" excluído`);
   } catch (err) {
     toast(err.message, "error");
@@ -4552,14 +4626,17 @@ function bindCards() {
     if (!description) return toast("Informe a descrição", "error");
     if (Number.isNaN(amount)) return toast("Valor inválido. Use por exemplo 49,90", "error");
     try {
+      const alreadyPaid = document.getElementById("charge-paid-flag").value === "1";
       await api("POST", `/cards/${card.id}/charges`, {
         description,
         amount,
         spent_at: spentAt,
-        paid: document.getElementById("charge-paid").value === "1",
+        paid: alreadyPaid,
       });
+      if (alreadyPaid) await applyChargeToInvoices(card, amount, true);
       resetChargeForm();
       await loadCards();
+      if (alreadyPaid) await loadDebts();
       toast("Lançado no extrato");
     } catch (err) {
       toast(err.message, "error");
