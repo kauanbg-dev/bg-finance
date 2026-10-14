@@ -419,6 +419,7 @@ function seedPreviewCards() {
       issuer: "Nubank",
       brand: "mastercard",
       last4: "4532",
+      color: "#820ad1",
       credit_limit: 8000,
       charges: [
         { id: ++previewSeq, card_id: nubank, description: "Mercado", amount: 186.4, spent_at: shiftDay(today(), -2), paid_at: null },
@@ -431,6 +432,7 @@ function seedPreviewCards() {
       issuer: "Itaú",
       brand: "visa",
       last4: "8811",
+      color: "#ec7000",
       credit_limit: 5000,
       charges: [
         { id: ++previewSeq, card_id: itau, description: "Restaurante", amount: 92, spent_at: shiftDay(today(), -1), paid_at: null },
@@ -549,6 +551,7 @@ function previewApi(method, url, body) {
         issuer: body.issuer,
         brand: body.brand,
         last4: String(body.last4 || "").replace(/\D/g, "").slice(0, 4),
+        color: body.color || null,
         credit_limit: Number(body.credit_limit),
         charges: [],
       };
@@ -582,6 +585,7 @@ function previewApi(method, url, body) {
         issuer: body.issuer,
         brand: body.brand,
         last4: String(body.last4 || "").replace(/\D/g, "").slice(0, 4),
+        color: body.color || null,
         credit_limit: Number(body.credit_limit),
       });
       return { ...card, charges: card.charges.map((charge) => ({ ...charge })) };
@@ -4152,12 +4156,37 @@ const CARD_BRANDS = {
 
 let wallet = [];
 let selectedCardId = null;
+let editingCardId = null;
+
+const CARD_COLOR_FALLBACK = { visa: "#1a1f71", mastercard: "#1a1a1a", elo: "#141414", amex: "#016fd0" };
+
+function cardTone(card) {
+  return /^#[0-9a-fA-F]{6}$/.test(card?.color || "") ? card.color : CARD_COLOR_FALLBACK[card?.brand] || "#1a1f71";
+}
+
+function shadeHex(hex, mix) {
+  const num = parseInt(hex.slice(1), 16);
+  const channel = (shift) => Math.round(((num >> shift) & 255) * mix);
+  const part = (value) => value.toString(16).padStart(2, "0");
+  return `#${part(channel(16))}${part(channel(8))}${part(channel(0))}`;
+}
 
 function setCardBrand(brand) {
   const input = document.getElementById("card-brand");
   if (input) input.value = brand;
   document.querySelectorAll("#card-form [data-brand]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.brand === brand);
+  });
+}
+
+function setCardColor(color) {
+  const input = document.getElementById("card-color");
+  const next = /^#[0-9a-fA-F]{6}$/.test(color || "") ? color : "#820ad1";
+  if (input) input.value = next;
+  document.querySelectorAll("#card-form [data-color]").forEach((btn) => {
+    const on = btn.dataset.color.toLowerCase() === next.toLowerCase();
+    btn.classList.toggle("is-on", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
 }
 
@@ -4170,9 +4199,30 @@ function setChargePaidFlag(paid) {
 }
 
 function resetCardForm() {
+  editingCardId = null;
   document.getElementById("card-form")?.reset();
   setCardBrand("visa");
+  setCardColor("#820ad1");
+  const submit = document.getElementById("card-submit");
+  if (submit) submit.textContent = "Salvar cartão";
   closeEntryForm(document.getElementById("card-form"));
+}
+
+function startEditCard(card) {
+  editingCardId = card.id;
+  const issuer = document.getElementById("card-issuer");
+  const last4 = document.getElementById("card-last4");
+  const limit = document.getElementById("card-limit");
+  if (issuer) issuer.value = card.issuer;
+  if (last4) last4.value = card.last4;
+  if (limit) limit.value = Number(card.credit_limit).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  setCardBrand(card.brand);
+  setCardColor(cardTone(card));
+  const submit = document.getElementById("card-submit");
+  if (submit) submit.textContent = "Salvar alterações";
+  const form = document.getElementById("card-form");
+  openEntryForm(form, issuer);
+  form?.scrollIntoView({ block: "center" });
 }
 
 function resetChargeForm() {
@@ -4311,6 +4361,8 @@ function renderCardsView() {
   if (!card) return;
   const plastic = document.createElement("article");
   plastic.className = `plastic brand-${card.brand}`;
+  const tone = cardTone(card);
+  plastic.style.background = `linear-gradient(145deg, ${tone}, ${shadeHex(tone, 0.45)})`;
   const top = document.createElement("div");
   top.className = "plastic-top";
   const issuer = document.createElement("span");
@@ -4432,10 +4484,21 @@ async function removeCharge(card, charge) {
 }
 
 function bindCards() {
+  document.querySelector('[data-open-form="card-form"]')?.addEventListener("click", () => {
+    editingCardId = null;
+    document.getElementById("card-form")?.reset();
+    setCardBrand("visa");
+    setCardColor("#820ad1");
+    const submit = document.getElementById("card-submit");
+    if (submit) submit.textContent = "Salvar cartão";
+  });
   document.getElementById("open-cards")?.addEventListener("click", () => showView("cards"));
   document.getElementById("cards-back")?.addEventListener("click", () => showView("debts"));
   document.querySelectorAll("#card-form [data-brand]").forEach((btn) => {
     btn.addEventListener("click", () => setCardBrand(btn.dataset.brand));
+  });
+  document.querySelectorAll("#card-form [data-color]").forEach((btn) => {
+    btn.addEventListener("click", () => setCardColor(btn.dataset.color));
   });
   document.querySelectorAll("#charge-form [data-charge-paid]").forEach((btn) => {
     btn.addEventListener("click", () => setChargePaidFlag(btn.dataset.chargePaid === "1"));
@@ -4452,17 +4515,27 @@ function bindCards() {
     if (Number.isNaN(creditLimit)) return toast("Informe o limite", "error");
     const submit = document.getElementById("card-submit");
     if (submit) submit.disabled = true;
+    const payload = {
+      issuer,
+      brand: document.getElementById("card-brand").value,
+      last4,
+      credit_limit: creditLimit,
+      color: document.getElementById("card-color").value,
+    };
     try {
-      const created = await api("POST", "/cards", {
-        issuer,
-        brand: document.getElementById("card-brand").value,
-        last4,
-        credit_limit: creditLimit,
-      });
-      selectedCardId = created.id;
-      resetCardForm();
-      await loadCards();
-      toast("Cartão adicionado");
+      if (editingCardId) {
+        await api("PUT", `/cards/${editingCardId}`, payload);
+        selectedCardId = editingCardId;
+        resetCardForm();
+        await loadCards();
+        toast("Cartão atualizado");
+      } else {
+        const created = await api("POST", "/cards", payload);
+        selectedCardId = created.id;
+        resetCardForm();
+        await loadCards();
+        toast("Cartão adicionado");
+      }
     } catch (err) {
       toast(err.message, "error");
     } finally {
@@ -4491,6 +4564,10 @@ function bindCards() {
     } catch (err) {
       toast(err.message, "error");
     }
+  });
+  document.getElementById("card-edit")?.addEventListener("click", () => {
+    const card = selectedCard();
+    if (card) startEditCard(card);
   });
   document.getElementById("card-remove")?.addEventListener("click", async () => {
     const card = selectedCard();
