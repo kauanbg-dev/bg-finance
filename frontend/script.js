@@ -4633,11 +4633,11 @@ function bindCards() {
         spent_at: spentAt,
         paid: alreadyPaid,
       });
-      if (alreadyPaid) await applyChargeToInvoices(card, amount, true);
+      const changed = await applyChargeToInvoices(card, amount, alreadyPaid);
       resetChargeForm();
       await loadCards();
-      if (alreadyPaid) await loadDebts();
-      toast("Lançado no extrato");
+      if (changed) await loadDebts();
+      toast(alreadyPaid ? "Lançado como pago" : changed ? "Lançado e a fatura aumentou" : "Lançado no extrato");
     } catch (err) {
       toast(err.message, "error");
     }
