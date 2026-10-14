@@ -477,6 +477,18 @@
           <label for="card-limit">Limite (R$)</label>
           <input type="text" id="card-limit" inputmode="decimal" placeholder="8.000,00" autocomplete="off" required>
         </div>
+        <div class="field">
+          <label>Cor</label>
+          <input type="hidden" id="card-color" value="#820ad1">
+          <div class="color-picks" role="group" aria-label="Cor do cartão">
+            <button type="button" class="color-pick is-on" data-color="#820ad1" style="--swatch:#820ad1" aria-label="Roxo"></button>
+            <button type="button" class="color-pick" data-color="#ec7000" style="--swatch:#ec7000" aria-label="Laranja"></button>
+            <button type="button" class="color-pick" data-color="#1a1f71" style="--swatch:#1a1f71" aria-label="Azul"></button>
+            <button type="button" class="color-pick" data-color="#0f766e" style="--swatch:#0f766e" aria-label="Verde"></button>
+            <button type="button" class="color-pick" data-color="#be123c" style="--swatch:#be123c" aria-label="Vermelho"></button>
+            <button type="button" class="color-pick" data-color="#111827" style="--swatch:#111827" aria-label="Preto"></button>
+          </div>
+        </div>
         <div class="debt-form-actions">
           <button type="button" class="btn secondary" id="card-cancel">Cancelar</button>
           <button class="btn primary" type="submit" id="card-submit">Salvar cartão</button>
@@ -562,7 +574,10 @@
           <p id="charge-paid-empty" class="empty-note">Nenhum pagamento ainda.</p>
         </div>
 
-        <button type="button" class="btn danger card-remove" id="card-remove">Excluir este cartão</button>
+        <div class="card-actions">
+          <button type="button" class="btn secondary" id="card-edit">Editar cartão</button>
+          <button type="button" class="btn danger" id="card-remove">Excluir este cartão</button>
+        </div>
       </div>
     </section>
 
