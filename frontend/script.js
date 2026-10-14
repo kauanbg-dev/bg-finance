@@ -996,6 +996,12 @@ function closeEditModal() {
 
 closeModalBtn?.addEventListener("click", closeEditModal);
 cancelEditBtn?.addEventListener("click", closeEditModal);
+document.getElementById("delete-edit")?.addEventListener("click", () => {
+  const current = editingTransaction;
+  if (!current) return;
+  closeEditModal();
+  deleteTransaction(current);
+});
 editModal?.addEventListener("click", (e) => {
   if (e.target.classList.contains("modal-backdrop")) closeEditModal();
 });
@@ -1200,7 +1206,14 @@ function renderTable(rows) {
     const category = inferCategory(t);
     const dateTd = document.createElement("td");
     dateTd.className = "date-cell";
-    dateTd.textContent = formatDate(txDate(t));
+    const [year, monthNum, dayNum] = txDate(t).split("-");
+    const dateShort = document.createElement("span");
+    dateShort.className = "date-short";
+    dateShort.textContent = `${dayNum}/${monthNum}`;
+    const dateFull = document.createElement("span");
+    dateFull.className = "date-full";
+    dateFull.textContent = `${dayNum}/${monthNum}/${year}`;
+    dateTd.append(dateShort, dateFull);
     const descTd = document.createElement("td");
     descTd.className = "desc-cell";
     descTd.textContent = t.description;
@@ -1246,6 +1259,11 @@ function renderTable(rows) {
     actions.append(editBtn, delBtn);
     actTd.appendChild(actions);
     tr.appendChild(actTd);
+    tr.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      if (!window.matchMedia("(max-width: 719px)").matches) return;
+      openEditModal(t);
+    });
     tbody.appendChild(tr);
   });
 }
@@ -1782,10 +1800,34 @@ function applyFilters() {
   renderDashboard();
 }
 
+const filterToggle = document.getElementById("filter-toggle");
+const filterExtra = document.getElementById("filter-extra");
+const filterActions = document.getElementById("filter-actions");
+
+function paintFilterToggle() {
+  if (!filterToggle) return;
+  const count = (typeFilter?.value ? 1 : 0) + (categoryFilter?.value ? 1 : 0);
+  filterToggle.textContent = count ? `Filtros · ${count}` : "Filtros";
+  filterToggle.classList.toggle("is-on", count > 0);
+}
+
+function setFilterPanel(open) {
+  if (filterExtra) filterExtra.hidden = !open;
+  if (filterActions) filterActions.hidden = !open;
+  filterToggle?.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function onTypeFilter() {
+  paintFilterToggle();
+  applyFilters();
+}
+
+filterToggle?.addEventListener("click", () => setFilterPanel(Boolean(filterExtra?.hidden)));
 monthFilter?.addEventListener("change", applyFilters);
-typeFilter?.addEventListener("change", applyFilters);
-categoryFilter?.addEventListener("change", applyFilters);
+typeFilter?.addEventListener("change", onTypeFilter);
+categoryFilter?.addEventListener("change", onTypeFilter);
 searchFilter?.addEventListener("input", debounce(applyFilters, 200));
+paintFilterToggle();
 chartMode?.addEventListener("change", renderDashboard);
 
 function stepMonth(delta) {
@@ -2547,6 +2589,65 @@ function fillDebtGroup(id, items, bucket) {
   if (sum) sum.textContent = ordered.length ? money(sumDebts(ordered)) : "";
 }
 
+let dueStripItem = null;
+
+function dueWhen(day) {
+  return dueMeta(day) || { text: formatDate(day), tone: "" };
+}
+
+function nextDueItem() {
+  const items = [];
+  debts.forEach((debt) => {
+    if (debt.paid_at) return;
+    const day = debtDay(debt);
+    if (!day) return;
+    items.push({ kind: "debt", day, name: debt.name, amount: debt.amount, ref: debt, label: "Dívida" });
+  });
+  subscriptions.forEach((sub) => {
+    if (sub.active === false) return;
+    const day = subDay(sub);
+    if (!day) return;
+    items.push({ kind: "sub", day, name: sub.name, amount: sub.amount, ref: sub, label: "Assinatura" });
+  });
+  items.sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name, "pt-BR"));
+  return items[0] || null;
+}
+
+function renderDueStrip() {
+  const strip = document.getElementById("due-strip");
+  if (!strip) return;
+  const item = nextDueItem();
+  dueStripItem = item;
+  if (!item) {
+    strip.hidden = true;
+    return;
+  }
+  const when = dueWhen(item.day);
+  strip.hidden = false;
+  strip.classList.toggle("is-bad", when.tone === "bad");
+  strip.classList.toggle("is-warn", when.tone === "warn");
+  const whenEl = document.getElementById("due-strip-when");
+  const nameEl = document.getElementById("due-strip-name");
+  const amountEl = document.getElementById("due-strip-amount");
+  if (whenEl) whenEl.textContent = when.text;
+  if (nameEl) nameEl.textContent = item.name;
+  if (amountEl) amountEl.textContent = money(item.amount);
+  const open = document.getElementById("due-strip-open");
+  if (open) open.setAttribute("aria-label", `Abrir ${item.label.toLowerCase()} ${item.name}`);
+}
+
+document.getElementById("due-strip-open")?.addEventListener("click", () => {
+  if (!dueStripItem) return;
+  showView(dueStripItem.kind === "debt" ? "debts" : "subs");
+});
+
+document.getElementById("due-strip-pay")?.addEventListener("click", async () => {
+  const item = dueStripItem;
+  if (!item) return;
+  if (item.kind === "debt") await setDebtPaid(item.ref, true);
+  else await registerSubPayment(item.ref);
+});
+
 function renderDebts() {
   const groups = { late: [], soon: [], next: [], later: [], paid: [] };
   debts.forEach((debt) => groups[debtBucket(debt)].push(debt));
@@ -2578,6 +2679,7 @@ function renderDebts() {
   renderMonthStack("debt-months", open, debtDay, (debt) => debtCard(debt, debtBucket(debt)));
   renderPaidSection("debt-paid-card", groups.paid, paidDay, (debt) => debtCard(debt, "paid"));
   if (empty) empty.hidden = open.length > 0;
+  renderDueStrip();
 }
 
 async function loadDebts() {
@@ -2942,6 +3044,7 @@ function renderSubscriptions() {
   renderPaidSection("sub-paid-card", paidSubEntries(), subDay, (sub) => subCard(sub, "paid"));
   fillSubGroup("sub-off-card", groups.off, "off");
   if (empty) empty.hidden = active.length > 0;
+  renderDueStrip();
 }
 
 async function loadSubscriptions() {
