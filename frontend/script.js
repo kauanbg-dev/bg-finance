@@ -488,6 +488,12 @@ function previewApi(method, url, body) {
     let added = 0;
     let skipped = 0;
     const invoices = new Map();
+    seedPreviewCards();
+    seedPreviewDebts();
+    const card = body.source === "card"
+      ? previewCards.find((item) => String(item.id) === String(body.card_id))
+      : null;
+    if (body.source === "card" && !card) throw new Error("Escolha o cartao da fatura");
     for (const row of body?.rows || []) {
       const signed = Number(row.amount);
       const description = String(row.description || "").trim();
@@ -498,6 +504,32 @@ function previewApi(method, url, body) {
       }
       const type = body.source === "card" ? (signed < 0 ? "income" : "expense") : signed < 0 ? "expense" : "income";
       const amount = Math.abs(signed);
+      if (body.source === "card") {
+        if (type !== "expense") {
+          skipped += 1;
+          continue;
+        }
+        const exists = (card.charges || []).some(
+          (c) => c.description === description && Number(c.amount) === amount && String(c.spent_at).slice(0, 10) === day
+        );
+        if (exists) {
+          skipped += 1;
+          continue;
+        }
+        card.charges = card.charges || [];
+        card.charges.push({
+          id: ++previewSeq,
+          card_id: card.id,
+          description,
+          amount,
+          spent_at: day,
+          paid_at: null,
+        });
+        added += 1;
+        const month = day.slice(0, 7);
+        invoices.set(month, (invoices.get(month) || 0) + amount);
+        continue;
+      }
       const exists = allTransactions.some(
         (t) => t.description === description && Number(t.amount) === amount && t.type === type && String(t.date).slice(0, 10) === day
       );
@@ -514,22 +546,19 @@ function previewApi(method, url, body) {
         date: day,
       });
       added += 1;
-      if (body.source === "card" && type === "expense") {
-        const month = day.slice(0, 7);
-        invoices.set(month, (invoices.get(month) || 0) + amount);
-      }
     }
-    seedPreviewDebts();
     for (const [month, total] of invoices) {
-      const name = `Fatura do cartão ${month.slice(5)}/${month.slice(0, 4)}`;
-      const current = previewDebts.find((d) => d.name === name && !d.paid_at);
-      if (current) current.amount = Math.round(total * 100) / 100;
+      const name = `Fatura ${card.issuer} ${month.slice(5)}/${month.slice(0, 4)}`;
+      const current = previewDebts.find((d) => d.name === name && String(d.card_id) === String(card.id) && !d.paid_at);
+      const extra = Math.round(total * 100) / 100;
+      if (current) current.amount = Math.round((Number(current.amount) + extra) * 100) / 100;
       else {
         previewDebts.unshift({
           id: ++previewSeq,
           name,
           kind: "credit_card",
-          amount: Math.round(total * 100) / 100,
+          card_id: card.id,
+          amount: extra,
           due_date: null,
           notes: "Importada da fatura",
           paid_at: null,
@@ -2117,7 +2146,7 @@ clearFilterBtn?.addEventListener("click", () => {
   renderDashboard();
 });
 
-exportBtn?.addEventListener("click", () => {
+function exportCsv() {
   const rows = filteredRows();
   if (!rows.length) return toast("Não há lançamentos para exportar", "error");
   const lines = [["Data", "Descrição", "Categoria", "Tipo", "Valor"].join(";")];
@@ -2139,11 +2168,24 @@ exportBtn?.addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
   toast(`${rows.length} lançamento${rows.length === 1 ? "" : "s"} exportado${rows.length === 1 ? "" : "s"}`);
-});
+}
+
+exportBtn?.addEventListener("click", exportCsv);
+document.getElementById("export-csv-settings")?.addEventListener("click", exportCsv);
 
 const importHint = document.getElementById("import-hint");
 const statementFile = document.getElementById("statement-file");
 let importSource = "account";
+
+function paintImportSource() {
+  const field = document.getElementById("import-card-field");
+  if (field) field.hidden = importSource !== "card";
+  if (importHint) {
+    importHint.textContent = importSource === "card"
+      ? "Compras entram no extrato do cartão escolhido e somam na fatura do mês."
+      : "Extrato da conta. Valor positivo vira receita e negativo vira despesa.";
+  }
+}
 
 document.querySelectorAll("#import-source [data-source]").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -2151,13 +2193,32 @@ document.querySelectorAll("#import-source [data-source]").forEach((btn) => {
     document.querySelectorAll("#import-source [data-source]").forEach((el) => {
       el.classList.toggle("active", el === btn);
     });
-    if (importHint) {
-      importHint.textContent = importSource === "card"
-        ? "Fatura fechada. As compras viram despesas e o total do mês vira uma dívida."
-        : "Extrato da conta. Valor positivo vira receita e negativo vira despesa.";
-    }
+    paintImportSource();
   });
 });
+paintImportSource();
+
+function fillImportCards() {
+  const select = document.getElementById("import-card");
+  if (!select) return;
+  const current = select.value;
+  select.replaceChildren();
+  if (!wallet.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Cadastre um cartão primeiro";
+    select.append(opt);
+    return;
+  }
+  wallet.forEach((card) => {
+    const opt = document.createElement("option");
+    opt.value = String(card.id);
+    opt.textContent = `${card.issuer} •••• ${card.last4}`;
+    select.append(opt);
+  });
+  if (wallet.some((card) => String(card.id) === current)) select.value = current;
+  else if (selectedCardId) select.value = String(selectedCardId);
+}
 
 function parseCsvLine(line, sep) {
   const out = [];
@@ -2243,11 +2304,18 @@ statementFile?.addEventListener("change", async () => {
   const rows = ofx ? parseStatementOfx(text) : parseStatementCsv(text);
   if (!rows.length) return toast("Não encontrei lançamentos nesse arquivo", "error");
   try {
-    const result = await api("POST", "/imports/statement", { source: importSource, rows });
-    await Promise.all([loadTransactions(), loadDebts()]);
-    const debtNote = result.debts ? ` e ${result.debts} dívida${result.debts === 1 ? "" : "s"}` : "";
+    const payload = { source: importSource, rows };
+    if (importSource === "card") {
+      const cardId = Number(document.getElementById("import-card")?.value);
+      if (!Number.isInteger(cardId) || cardId <= 0) return toast("Escolha o cartão da fatura", "error");
+      payload.card_id = cardId;
+      selectedCardId = cardId;
+    }
+    const result = await api("POST", "/imports/statement", payload);
+    await Promise.all([loadTransactions(), loadDebts(), loadCards()]);
+    const debtNote = result.debts ? ` e ${result.debts} fatura${result.debts === 1 ? "" : "s"}` : "";
     toast(`${result.added} lançamento${result.added === 1 ? "" : "s"} importado${result.added === 1 ? "" : "s"}${debtNote}`);
-    if (importSource === "card" && result.debts) showView("debts");
+    if (importSource === "card") showView("debts");
   } catch (err) {
     toast(err.message, "error");
   }
@@ -4417,17 +4485,30 @@ function chargeRow(card, charge) {
   toggle.className = charge.paid_at ? "btn secondary" : "pay-btn";
   toggle.textContent = charge.paid_at ? "Reabrir" : "Paguei";
   toggle.addEventListener("click", () => setChargePaid(card, charge, !charge.paid_at));
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "btn secondary";
-  remove.textContent = "Excluir";
-  remove.addEventListener("click", () => removeCharge(card, charge));
+  const more = document.createElement("details");
+  more.className = "charge-more";
+  const summary = document.createElement("summary");
+  summary.textContent = "Mais";
+  summary.setAttribute("aria-label", "Mais ações");
+  const menu = document.createElement("div");
+  menu.className = "charge-more-menu";
   const edit = document.createElement("button");
   edit.type = "button";
-  edit.className = "btn secondary";
   edit.textContent = "Editar";
-  edit.addEventListener("click", () => startEditCharge(card, charge));
-  actions.append(toggle, edit, remove);
+  edit.addEventListener("click", () => {
+    more.removeAttribute("open");
+    startEditCharge(card, charge);
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "Excluir";
+  remove.addEventListener("click", () => {
+    more.removeAttribute("open");
+    removeCharge(card, charge);
+  });
+  menu.append(edit, remove);
+  more.append(summary, menu);
+  actions.append(toggle, more);
   row.append(name, amount, meta, actions);
   return row;
 }
@@ -4494,7 +4575,6 @@ function renderCardsView() {
   const paid = charges.filter((item) => item.paid_at);
   const usage = cardLimitUse(card);
   const openSum = usage.used;
-  const paidSum = chargeSum(charges, true);
   const limit = Number(card.credit_limit) || 0;
   const free = Math.max(0, limit - openSum);
   const usedPct = limit ? Math.min(100, (openSum / limit) * 100) : 0;
@@ -4527,17 +4607,6 @@ function renderCardsView() {
   document.getElementById("invoice-list")?.replaceChildren(...invoiceRows);
   const invoiceEmpty = document.getElementById("invoice-empty");
   if (invoiceEmpty) invoiceEmpty.hidden = invoiceRows.length > 0;
-  const openSumEl = document.getElementById("card-open-sum");
-  const paidSumEl = document.getElementById("card-paid-sum");
-  const openHint = document.getElementById("card-open-hint");
-  const paidHint = document.getElementById("card-paid-hint");
-  if (openSumEl) openSumEl.textContent = money(openSum);
-  if (paidSumEl) paidSumEl.textContent = money(paidSum);
-  if (openHint) {
-    const count = usage.invoices.length;
-    openHint.textContent = count === 1 ? "1 fatura no limite" : count ? `${count} faturas no limite` : open.length ? `${open.length} lançamentos` : "Nada na fatura";
-  }
-  if (paidHint) paidHint.textContent = paid.length === 1 ? "1 lançamento" : paid.length ? `${paid.length} lançamentos` : "Nada pago";
   document.getElementById("charge-open")?.replaceChildren(...open.map((item) => chargeRow(card, item)));
   document.getElementById("charge-paid")?.replaceChildren(...paid.map((item) => chargeRow(card, item)));
   const openEmpty = document.getElementById("charge-open-empty");
@@ -4554,6 +4623,7 @@ async function loadCards() {
     toast(err.message, "error");
   }
   if (!wallet.some((card) => card.id === selectedCardId)) selectedCardId = wallet[0]?.id ?? null;
+  fillImportCards();
   renderCardsView();
   syncDebtCardField();
   if (debts.length) renderDebts();

@@ -2704,7 +2704,46 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
 .charge-name{ font-weight: 700; }
 .charge-meta{ grid-column: 1; font-size: 12px; color: rgba(var(--wash), .55); }
 .charge-amount{ font-weight: 800; font-variant-numeric: tabular-nums; }
-.charge-actions{ grid-column: 1 / -1; display: flex; gap: 8px; }
+.charge-actions{ grid-column: 1 / -1; display: flex; gap: 8px; align-items: flex-start; }
+.charge-more{ position: relative; margin-left: auto; }
+.charge-more > summary{
+  list-style: none;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--wash), .12);
+  background: rgba(var(--wash), .06);
+  font-weight: 700;
+  font-size: 13px;
+}
+.charge-more > summary::-webkit-details-marker{ display: none; }
+.charge-more-menu{
+  position: absolute;
+  right: 0;
+  z-index: 3;
+  margin-top: 4px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: #111c31;
+  border: 1px solid rgba(var(--wash), .12);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.charge-more-menu button{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.charge-more-menu button:hover{ background: rgba(var(--wash), .08); }
 .color-picks{ display: flex; flex-wrap: wrap; gap: 10px; }
 .color-pick{
   width: 36px;

@@ -12,7 +12,7 @@ form.addEventListener("submit", async (e) => {
 
   if (!name) return setMsg(msg, "Digite seu nome.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setMsg(msg, "Digite um e-mail válido.");
-  if (password.length < 6) return setMsg(msg, "A senha deve ter pelo menos 6 caracteres.");
+  if (password.length < 10) return setMsg(msg, "A senha deve ter pelo menos 10 caracteres.");
   if (password !== confirm) return setMsg(msg, "As senhas não coincidem.");
 
   setMsg(msg, "");
