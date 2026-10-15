@@ -520,19 +520,6 @@
           <p id="invoice-empty" class="empty-note">Nenhuma fatura em aberto neste cartão.</p>
         </div>
 
-        <div class="cards card-totals">
-          <div class="card expense">
-            <div class="card-top"><h3>A pagar</h3></div>
-            <p id="card-open-sum">R$ 0,00</p>
-            <span class="card-hint" id="card-open-hint">Nada na fatura</span>
-          </div>
-          <div class="card income">
-            <div class="card-top"><h3>Pago</h3></div>
-            <p id="card-paid-sum">R$ 0,00</p>
-            <span class="card-hint" id="card-paid-hint">Nada pago</span>
-          </div>
-        </div>
-
         <button type="button" class="add-launch" data-open-form="charge-form">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
           Lançar no extrato
@@ -786,6 +773,10 @@
           <button type="button" class="seg-btn" data-source="card">Fatura do cartão</button>
         </div>
         <p class="muted import-hint" id="import-hint">Extrato da conta. Valor positivo vira receita e negativo vira despesa.</p>
+        <div class="field" id="import-card-field" hidden>
+          <label for="import-card">Cartão da fatura</label>
+          <select id="import-card"></select>
+        </div>
         <label class="btn secondary import-file">
           <input id="statement-file" type="file" accept=".csv,.ofx,.qfx,text/csv,application/x-ofx">
           <span>Escolher arquivo</span>
@@ -796,6 +787,13 @@
           <h2>Gráficos</h2>
         </div>
         <div class="pref-list" id="chart-prefs"></div>
+      </div>
+      <div class="sheet-card">
+        <div class="chart-header">
+          <h2>Exportar</h2>
+          <p class="muted">Baixa os lançamentos do painel em CSV, com o filtro de mês se estiver ativo.</p>
+        </div>
+        <button class="btn secondary" id="export-csv-settings" type="button">Exportar CSV</button>
       </div>
       <div class="sheet-card" id="telegram-card">
         <div class="chart-header">

@@ -37,7 +37,7 @@ async function postJSON(url, body) {
 
 function passwordScore(pw) {
   let score = 0;
-  if (pw.length >= 6) score++;
+  if (pw.length >= 8) score++;
   if (pw.length >= 10) score++;
   if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
   if (/\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)) score++;

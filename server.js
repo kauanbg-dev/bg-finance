@@ -3,6 +3,7 @@ require('dotenv').config();
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const path = require('path');
@@ -13,6 +14,23 @@ const telegram = require('./telegram');
 const app = express();
 app.set('trust proxy', 1);
 
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://cdn.jsdelivr.net", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'frontend')));
@@ -22,7 +40,9 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET nao definida no .env');
 }
 
-function authenticateToken(req, res, next) {
+const MIN_PASSWORD = 10;
+
+async function authenticateToken(req, res, next) {
   const header = req.headers.authorization;
   const token = header && header.split(' ')[1];
 
@@ -31,7 +51,12 @@ function authenticateToken(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const result = await db.query('SELECT token_version FROM users WHERE id = $1', [payload.id]);
+    if (!result.rows[0] || Number(result.rows[0].token_version) !== Number(payload.ver)) {
+      return res.status(403).json({ error: 'Token invalido' });
+    }
+    req.user = payload;
     next();
   } catch {
     return res.status(403).json({ error: 'Token invalido' });
@@ -95,8 +120,12 @@ async function register(req, res) {
     return res.status(400).json({ error: 'Preencha nome, email e senha' });
   }
 
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Senha muito curta (min. 6 caracteres)' });
+  if (rateLimited(`register:${req.ip}`, 5, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  }
+
+  if (password.length < MIN_PASSWORD) {
+    return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
   }
 
   try {
@@ -193,7 +222,7 @@ async function sendResetEmail(to, name, link) {
     </div>`;
 
   const sent = await deliverEmail({ to, subject: 'Redefinir sua senha do BG Finance', html });
-  if (!sent) console.warn(`Nenhum provedor de e-mail configurado. Link de redefinicao para ${to}: ${link}`);
+  if (!sent) console.warn('Nenhum provedor de e-mail configurado. Pedido de redefinicao nao foi enviado.');
 }
 
 async function forgotPassword(req, res) {
@@ -233,8 +262,8 @@ async function resetPassword(req, res) {
   const token = String(req.body.token || '');
   const password = String(req.body.password || '');
 
-  if (!token || password.length < 6) {
-    return res.status(400).json({ error: 'Senha muito curta (min. 6 caracteres)' });
+  if (!token || password.length < MIN_PASSWORD) {
+    return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
   }
 
   if (rateLimited(`reset:${req.ip}`, 10, 15 * 60 * 1000)) {
@@ -255,7 +284,10 @@ async function resetPassword(req, res) {
     }
 
     const hash = await bcrypt.hash(password, 10);
-    await db.query('UPDATE users SET password = $1 WHERE id = $2', [hash, row.user_id]);
+    await db.query(
+      'UPDATE users SET password = $1, token_version = token_version + 1 WHERE id = $2',
+      [hash, row.user_id]
+    );
     await db.query('DELETE FROM password_resets WHERE user_id = $1', [row.user_id]);
     return res.json({ ok: true });
   } catch (err) {
@@ -273,7 +305,7 @@ async function login(req, res) {
 
   try {
     const result = await db.query(
-      'SELECT id, name, email, password FROM users WHERE email = $1',
+      'SELECT id, name, email, password, token_version FROM users WHERE email = $1',
       [email]
     );
 
@@ -290,9 +322,9 @@ async function login(req, res) {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, email: user.email, ver: user.token_version || 1 },
       JWT_SECRET,
-      { expiresIn: '21d' }
+      { expiresIn: '7d' }
     );
 
     return res.json({ token });
@@ -574,6 +606,15 @@ app.post('/imports/statement', authenticateToken, async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 800) : [];
   if (!source || !rows.length) return res.status(400).json({ error: 'Arquivo sem lancamentos' });
 
+  let card = null;
+  if (source === 'card') {
+    const cardId = Number(req.body?.card_id);
+    if (!Number.isInteger(cardId) || cardId <= 0) return res.status(400).json({ error: 'Escolha o cartao da fatura' });
+    const owned = await db.query('SELECT id, issuer FROM cards WHERE id = $1 AND user_id = $2', [cardId, req.user.id]);
+    card = owned.rows[0];
+    if (!card) return res.status(400).json({ error: 'Cartao nao encontrado' });
+  }
+
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -597,6 +638,34 @@ app.post('/imports/statement', authenticateToken, async (req, res) => {
       const amount = Math.round(Math.abs(signed) * 100) / 100;
       if (!validTransaction(description, amount, type)) {
         skipped += 1;
+        continue;
+      }
+
+      if (source === 'card') {
+        if (type !== 'expense') {
+          skipped += 1;
+          continue;
+        }
+        const duplicate = await client.query(
+          `SELECT 1
+           FROM card_charges
+           WHERE user_id = $1 AND card_id = $2 AND description = $3 AND amount = $4
+             AND spent_at = $5::date
+           LIMIT 1`,
+          [req.user.id, card.id, description, amount, day]
+        );
+        if (duplicate.rows[0]) {
+          skipped += 1;
+          continue;
+        }
+        await client.query(
+          `INSERT INTO card_charges (user_id, card_id, description, amount, spent_at, paid_at)
+           VALUES ($1, $2, $3, $4, $5, NULL)`,
+          [req.user.id, card.id, description, amount, day]
+        );
+        added += 1;
+        const month = day.slice(0, 7);
+        invoiceTotals.set(month, (invoiceTotals.get(month) || 0) + amount);
         continue;
       }
 
@@ -624,31 +693,30 @@ app.post('/imports/statement', authenticateToken, async (req, res) => {
         [description, amount, type, req.user.id, categoryId, date]
       );
       added += 1;
-      if (source === 'card' && type === 'expense') {
-        const month = day.slice(0, 7);
-        invoiceTotals.set(month, (invoiceTotals.get(month) || 0) + amount);
-      }
     }
 
     let debts = 0;
     for (const [month, total] of invoiceTotals) {
       const [year, mon] = month.split('-');
-      const name = `Fatura do cartão ${mon}/${year}`;
+      const name = `Fatura ${card.issuer} ${mon}/${year}`;
       const rounded = Math.round(total * 100) / 100;
       const existing = await client.query(
-        `SELECT id FROM debts WHERE user_id = $1 AND name = $2 AND paid_at IS NULL LIMIT 1`,
-        [req.user.id, name]
+        `SELECT id, amount::float8 AS amount FROM debts
+         WHERE user_id = $1 AND kind = 'credit_card' AND card_id = $2 AND paid_at IS NULL
+           AND name = $3
+         LIMIT 1`,
+        [req.user.id, card.id, name]
       );
       if (existing.rows[0]) {
         await client.query(
-          `UPDATE debts SET amount = $1, kind = 'credit_card', notes = $2 WHERE id = $3`,
-          [rounded, 'Importada da fatura', existing.rows[0].id]
+          `UPDATE debts SET amount = $1, notes = $2 WHERE id = $3`,
+          [Math.round((Number(existing.rows[0].amount) + rounded) * 100) / 100, 'Importada da fatura', existing.rows[0].id]
         );
       } else {
         await client.query(
-          `INSERT INTO debts (user_id, name, kind, amount, notes)
-           VALUES ($1, $2, 'credit_card', $3, $4)`,
-          [req.user.id, name, rounded, 'Importada da fatura']
+          `INSERT INTO debts (user_id, name, kind, amount, notes, card_id)
+           VALUES ($1, $2, 'credit_card', $3, $4, $5)`,
+          [req.user.id, name, rounded, 'Importada da fatura', card.id]
         );
       }
       debts += 1;
