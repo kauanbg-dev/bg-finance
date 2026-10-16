@@ -1612,89 +1612,29 @@ li button{
   .chart-wrapper{ height: 240px; }
   .chart-wrapper.tall{ height: 270px; }
 
-  #tx-table{ font-size: 13px; }
-  #tx-table thead{ display: table-header-group; }
-  #tx-table, #tx-table tbody{ display: table; }
-  #tx-table{ display: table; width: 100%; }
-  #tx-table tbody{ display: table-row-group; }
-  #tx-table tbody tr.day-card-row{ display: none; }
-  #tx-table tbody tr.in-day{
-    display: table-row;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-  #tx-table tbody tr.in-day .date-cell{ display: table-cell; vertical-align: middle; }
-  #tx-table tbody tr.in-day .date-short{
-    display: block;
-    font-size: 16px;
-    font-weight: 800;
-    color: var(--text-strong);
-    line-height: 1.1;
-  }
-  #tx-table tbody tr.in-day .date-wd{
-    display: block;
-    margin-top: 2px;
-    font-size: 11px;
-    font-weight: 600;
-    color: rgba(var(--wash), .5);
-  }
-  #tx-table tbody tr.in-day .date-full{ display: none; }
-  #tx-table tbody tr.day-gap-row{
-    display: table-row;
-    background: transparent;
-    pointer-events: none;
-  }
-  #tx-table tbody tr.day-gap-row td{
-    height: 28px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-  }
-  #tx-table tbody tr.in-day.day-start td{
-    border-top: 1px solid rgba(var(--wash), .1);
-    padding-top: 22px;
-  }
-  #tx-table tbody tr.in-day.day-end td{
-    padding-bottom: 18px;
-    border-bottom: 0;
-  }
-  #tx-table tbody tr.month-row td{
-    padding: 12px 8px;
-    border: 0;
-    border-bottom: 1px solid rgba(var(--wash), .08);
-    border-radius: 0;
-    background: rgba(var(--wash), .04);
-  }
-  #tx-table tbody tr.kind-row,
+  #tx-table thead{ display: none; }
+  #tx-table, #tx-table tbody{ display: block; width: 100%; }
+  #tx-table tbody tr.day-card-row{ display: block; margin: 0 0 20px; }
+  #tx-table tbody tr.in-day,
+  #tx-table tbody tr.day-gap-row{ display: none; }
   #tx-table tbody tr.month-row,
-  #tx-table tbody tr:not(.empty-row):not(.day-row):not(.day-card-row):not(.kind-row):not(.month-row):not(.day-gap-row){
-    display: table-row;
+  #tx-table tbody tr.kind-row,
+  #tx-table tbody tr.empty-row{ display: block; }
+  #tx-table td{
+    display: block;
     padding: 0;
-    margin: 0;
-    border-radius: 0;
-    background: transparent;
     border: 0;
   }
-  #tx-table td{
-    display: table-cell;
-    padding: 10px 8px;
-    border-bottom: 1px solid rgba(var(--wash),.08);
-  }
-  #tx-table .date-short{ display: none; }
-  #tx-table .date-full{ display: inline; }
   #tx-table .cat-cell,
   #tx-table .type-cell,
-  #tx-table .act-cell{ display: table-cell; }
-  #tx-table .desc-cell{ white-space: normal; }
-  #tx-table tbody tr:not(.empty-row){ cursor: auto; }
-  .sheet tbody tr .action-btn{ opacity: .75; }
-  .sheet tbody tr:hover .action-btn,
-  .sheet tbody tr .action-btn:focus-visible{ opacity: 1; }
-  .mobile-only{ display: none; }
-  .table-wrap{ overflow-x: auto; }
+  #tx-table .act-cell{ display: none; }
+  #tx-table tbody tr.month-row td{
+    padding: 10px 2px 6px;
+    border: 0;
+    background: transparent;
+  }
+  .table-wrap{ overflow: visible; }
+  .day-card{ padding: 16px 18px; }
 
   .modal-card{
     position: relative;
@@ -1758,7 +1698,7 @@ li button{
   .sheet-card, .chart-card{ padding: 14px; }
   .chart-wrapper{ height: 260px; }
   .chart-wrapper.tall{ height: 300px; }
-  #tx-table{ min-width: 640px; }
+  #tx-table{ min-width: 0; }
 }
 
 /* AUTH EM TELAS LARGAS */
