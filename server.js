@@ -213,7 +213,8 @@ setInterval(() => {
 }, 10 * 60 * 1000).unref();
 
 const RESET_TTL_MINUTES = 30;
-const APP_URL = (process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+const MAIL_READY = Boolean(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY);
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -228,6 +229,9 @@ function parseSender(value) {
 async function deliverEmail({ to, subject, html }) {
   if (process.env.BREVO_API_KEY) {
     const sender = parseSender(process.env.MAIL_FROM);
+    if (!sender.email.includes('@')) {
+      throw new Error('MAIL_FROM ausente ou invalido. No Brevo, use um remetente verificado.');
+    }
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -238,15 +242,11 @@ async function deliverEmail({ to, subject, html }) {
   }
 
   if (process.env.RESEND_API_KEY) {
+    const from = process.env.MAIL_FROM || 'BG Finance <onboarding@resend.dev>';
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: process.env.MAIL_FROM || 'BG Finance <onboarding@resend.dev>',
-        to: [to],
-        subject,
-        html,
-      }),
+      body: JSON.stringify({ from, to: [to], subject, html }),
     });
     if (!response.ok) throw new Error(`Resend respondeu ${response.status}: ${await response.text()}`);
     return true;
@@ -270,7 +270,7 @@ async function sendResetEmail(to, name, link) {
     </div>`;
 
   const sent = await deliverEmail({ to, subject: 'Redefinir sua senha do BG Finance', html });
-  if (!sent) console.warn('Nenhum provedor de e-mail configurado. Pedido de redefinicao nao foi enviado.');
+  if (!sent) throw new Error('Nenhum provedor de e-mail configurado (BREVO_API_KEY ou RESEND_API_KEY)');
 }
 
 async function forgotPassword(req, res) {
@@ -286,7 +286,7 @@ async function forgotPassword(req, res) {
   }
 
   try {
-    const result = await db.query('SELECT id, name FROM users WHERE email = $1', [email]);
+    const result = await db.query('SELECT id, name, telegram_chat_id FROM users WHERE email = $1', [email]);
     const user = result.rows[0];
     if (!user) return res.json(generic);
 
@@ -298,7 +298,27 @@ async function forgotPassword(req, res) {
       [user.id, hashToken(token), String(RESET_TTL_MINUTES)]
     );
 
-    await sendResetEmail(email, user.name, `${APP_URL}/reset.html?token=${token}`);
+    const link = `${APP_URL}/reset.html?token=${token}`;
+    let delivered = false;
+    try {
+      await sendResetEmail(email, user.name, link);
+      delivered = true;
+    } catch (mailErr) {
+      console.error('E-mail de redefinicao falhou:', mailErr.message);
+    }
+    if (user.telegram_chat_id) {
+      try {
+        await telegram.sendResetLink(user.telegram_chat_id, link);
+        delivered = true;
+      } catch (tgErr) {
+        console.error('Telegram de redefinicao falhou:', tgErr.message);
+      }
+    }
+    if (!delivered) {
+      return res.status(500).json({
+        error: 'Nao foi possivel enviar o link. No Render, defina BREVO_API_KEY e MAIL_FROM, ou vincule o Telegram em Ajustes.',
+      });
+    }
     return res.json(generic);
   } catch (err) {
     console.error('Erro ao solicitar redefinicao de senha:', err);
@@ -1890,6 +1910,8 @@ db.initDatabase()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);
+      console.log(MAIL_READY ? 'E-mail de senha: provedor configurado' : 'E-mail de senha: sem BREVO_API_KEY nem RESEND_API_KEY');
+      console.log(`APP_URL: ${APP_URL}`);
     });
   })
   .catch((err) => {
