@@ -1504,7 +1504,8 @@ li button{
   font-weight: 800;
 }
 #tx-table tbody tr.in-day{ display: none; }
-#tx-table tbody tr:not(.empty-row):not(.day-row):not(.day-card-row):not(.kind-row):not(.month-row):not(.in-day){
+#tx-table tbody tr.day-gap-row{ display: none; }
+#tx-table tbody tr:not(.empty-row):not(.day-row):not(.day-card-row):not(.kind-row):not(.month-row):not(.in-day):not(.day-gap-row){
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "date desc amount";
@@ -1641,9 +1642,24 @@ li button{
     color: rgba(var(--wash), .5);
   }
   #tx-table tbody tr.in-day .date-full{ display: none; }
+  #tx-table tbody tr.day-gap-row{
+    display: table-row;
+    background: transparent;
+    pointer-events: none;
+  }
+  #tx-table tbody tr.day-gap-row td{
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
   #tx-table tbody tr.in-day.day-start td{
     border-top: 1px solid rgba(var(--wash), .1);
-    padding-top: 18px;
+    padding-top: 22px;
+  }
+  #tx-table tbody tr.in-day.day-end td{
+    padding-bottom: 18px;
+    border-bottom: 0;
   }
   #tx-table tbody tr.month-row td{
     padding: 12px 8px;
@@ -1654,7 +1670,7 @@ li button{
   }
   #tx-table tbody tr.kind-row,
   #tx-table tbody tr.month-row,
-  #tx-table tbody tr:not(.empty-row):not(.day-row):not(.day-card-row):not(.kind-row):not(.month-row){
+  #tx-table tbody tr:not(.empty-row):not(.day-row):not(.day-card-row):not(.kind-row):not(.month-row):not(.day-gap-row){
     display: table-row;
     padding: 0;
     margin: 0;
