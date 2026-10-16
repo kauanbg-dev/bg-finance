@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const db = require('./database');
 
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
+const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
 const WEBHOOK_SECRET = crypto.createHmac('sha256', process.env.JWT_SECRET || 'bg-finance').update('telegram-webhook').digest('hex');
 
 let botUsername = '';
@@ -124,6 +124,23 @@ async function send(chatId, text) {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
   });
+}
+
+async function sendResetLink(chatId, link) {
+  if (!TOKEN || !chatId) return false;
+  await send(
+    chatId,
+    [
+      '<b>Redefinir senha</b>',
+      '',
+      'Alguém pediu para trocar a senha da sua conta no BG Finance.',
+      '',
+      `<a href="${escapeHtml(link)}">Criar nova senha</a>`,
+      '',
+      'O link vale 30 minutos. Se não foi você, ignore esta mensagem.',
+    ].join('\n')
+  );
+  return true;
 }
 
 function helpText() {
@@ -424,4 +441,4 @@ async function start() {
   }
 }
 
-module.exports = { setup, start, configured, username };
+module.exports = { setup, start, configured, username, sendResetLink };

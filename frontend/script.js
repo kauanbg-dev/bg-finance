@@ -1636,7 +1636,30 @@ function appendDayCard(iso, ordered, sortedList) {
       amt.textContent = `${t.type === "expense" ? "− " : "+ "}${money(t.amount)}`;
       row.append(desc, amt);
       row.addEventListener("click", () => openEditModal(t));
-      line.append(row);
+      const actions = document.createElement("div");
+      actions.className = "day-actions";
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "action-btn edit";
+      editBtn.title = "Editar";
+      editBtn.setAttribute("aria-label", `Editar ${t.description}`);
+      editBtn.innerHTML = ICON.edit;
+      editBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openEditModal(t);
+      });
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "action-btn delete";
+      delBtn.title = "Excluir";
+      delBtn.setAttribute("aria-label", `Excluir ${t.description}`);
+      delBtn.innerHTML = ICON.trash;
+      delBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteTransaction(t);
+      });
+      actions.append(editBtn, delBtn);
+      line.append(row, actions);
       list.appendChild(line);
     });
     card.append(rail, list);
