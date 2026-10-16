@@ -165,6 +165,17 @@ async function initDatabase() {
       date TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS position INTEGER`);
+  await pool.query(`UPDATE transactions SET position = id WHERE position IS NULL`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN position SET DEFAULT 0`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN position SET NOT NULL`);
+
+  for (const table of ['debts', 'subscriptions', 'savings', 'card_charges']) {
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS position INTEGER`);
+    await pool.query(`UPDATE ${table} SET position = id WHERE position IS NULL`);
+    await pool.query(`ALTER TABLE ${table} ALTER COLUMN position SET DEFAULT 0`);
+    await pool.query(`ALTER TABLE ${table} ALTER COLUMN position SET NOT NULL`);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_resets (
