@@ -2129,13 +2129,35 @@ body.is-block-dragging{
   text-align: left;
   cursor: pointer;
 }
+.day-item-meta{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
 .day-item-desc{
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
+}
+.day-item-cat{
+  max-width: 100%;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+@media (min-width: 720px){
+  .day-item-meta{
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .day-item-desc{ flex: 0 1 auto; }
+  .day-item-cat{ flex: none; }
 }
 .day-item-amt{
   flex: none;
