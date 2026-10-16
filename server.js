@@ -79,6 +79,58 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+async function stampPosition(runner, id) {
+  if (!id) return;
+  await runner.query('UPDATE transactions SET position = $1 WHERE id = $1 AND position = 0', [id]);
+}
+
+async function stampTablePosition(table, id) {
+  if (!id || !/^(debts|subscriptions|savings|card_charges)$/.test(table)) return;
+  await db.query(`UPDATE ${table} SET position = $1 WHERE id = $1 AND position = 0`, [id]);
+}
+
+async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, extraSql = '', extraParams = [], orderSql }) {
+  if (!/^(transactions|debts|subscriptions|savings|card_charges)$/.test(table)) return { placed: false };
+  const dateBit = copyDate && dateCol ? `, ${dateCol} AS slot_date` : '';
+  const rows = await db.query(
+    `SELECT id, COALESCE(NULLIF(position, 0), id) AS rank${dateBit}
+     FROM ${table}
+     WHERE user_id = $1 ${extraSql}
+     ORDER BY ${orderSql}`,
+    [userId, ...extraParams]
+  );
+  const list = rows.rows;
+  const from = list.findIndex((row) => Number(row.id) === id);
+  if (from < 0) return { placed: false, missing: true };
+  const [moved] = list.splice(from, 1);
+  let to = beforeId == null ? list.length : list.findIndex((row) => Number(row.id) === beforeId);
+  if (to < 0) to = list.length;
+  if (to === from) return { placed: false };
+  list.splice(to, 0, moved);
+  const neighbor = list[to + 1] || list[to - 1] || moved;
+  const before = list[to + 1];
+  const after = list[to - 1];
+  const rank = (row) => Number(row.rank) || Number(row.id);
+  let nextPos;
+  if (before && after) nextPos = Math.round((rank(before) + rank(after)) / 2);
+  else if (before) nextPos = rank(before) + 1;
+  else if (after) nextPos = rank(after) - 1;
+  else nextPos = rank(moved);
+  if (before && nextPos === rank(before)) nextPos = rank(before) + 1;
+  if (copyDate && dateCol) {
+    await db.query(
+      `UPDATE ${table} SET ${dateCol} = $1, position = $2 WHERE id = $3 AND user_id = $4`,
+      [neighbor.slot_date, nextPos, id, userId]
+    );
+  } else {
+    await db.query(
+      `UPDATE ${table} SET position = $1 WHERE id = $2 AND user_id = $3`,
+      [nextPos, id, userId]
+    );
+  }
+  return { placed: true };
+}
+
 function validTransaction(description, amount, type) {
   return (
     description.length > 0 &&
@@ -486,12 +538,13 @@ app.get('/transactions', authenticateToken, async (req, res) => {
          t.user_id,
          t.category_id,
          c.name AS category_name,
-         t.date
+         t.date,
+         t.position
        FROM transactions t
        LEFT JOIN categories c ON c.id = t.category_id
        WHERE t.user_id = $1
        ${monthFilter}
-       ORDER BY t.date DESC, t.id DESC`,
+       ORDER BY t.date DESC, t.position DESC, t.id DESC`,
       params
     );
 
@@ -527,8 +580,9 @@ app.post('/transactions', authenticateToken, async (req, res) => {
            RETURNING id`,
           [description, amount, type, req.user.id, categoryId]
         );
-
-    return res.status(201).json({ id: result.rows[0].id });
+    const createdId = result.rows[0].id;
+    await stampPosition(db, createdId);
+    return res.status(201).json({ id: createdId });
   } catch (err) {
     console.error('Erro ao criar transacao:', err);
     return res.status(500).json({ error: 'Erro ao criar transacao' });
@@ -577,6 +631,159 @@ app.put('/transactions/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Erro ao editar transacao:', err);
     return res.status(500).json({ error: 'Erro ao editar transacao' });
+  }
+});
+
+app.post('/transactions/:id/move', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const dir = req.body?.dir === 'up' ? 'up' : req.body?.dir === 'down' ? 'down' : '';
+  if (!id || !dir) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const current = await db.query(
+      `SELECT id, position, TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day
+       FROM transactions
+       WHERE id = $1 AND user_id = $2`,
+      [id, req.user.id]
+    );
+    const row = current.rows[0];
+    if (!row) return res.status(404).json({ error: 'Transacao nao encontrada' });
+
+    const siblings = await db.query(
+      `SELECT id, date, COALESCE(NULLIF(position, 0), id) AS rank
+       FROM transactions
+       WHERE user_id = $1
+       ORDER BY date DESC, COALESCE(NULLIF(position, 0), id) DESC, id DESC`,
+      [req.user.id]
+    );
+    const list = siblings.rows;
+    const index = list.findIndex((item) => Number(item.id) === id);
+    const swapWith = dir === 'up' ? list[index - 1] : list[index + 1];
+    if (index < 0 || !swapWith) return res.json({ moved: false });
+
+    const me = list[index];
+    const a = Number(me.rank);
+    const b = Number(swapWith.rank);
+    const nextA = b === a ? b + (dir === 'up' ? 1 : -1) : b;
+    await db.query(
+      `UPDATE transactions AS t
+       SET date = v.date, position = v.position
+       FROM (VALUES
+         ($1::int, $2::timestamptz, $3::int),
+         ($4::int, $5::timestamptz, $6::int)
+       ) AS v(id, date, position)
+       WHERE t.id = v.id AND t.user_id = $7`,
+      [me.id, swapWith.date, nextA, swapWith.id, me.date, a, req.user.id]
+    );
+    return res.json({ moved: true });
+  } catch (err) {
+    console.error('Erro ao reordenar transacao:', err);
+    return res.status(500).json({ error: 'Erro ao reordenar lancamento' });
+  }
+});
+
+app.post('/transactions/:id/place', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+  try {
+    const result = await placeOwnedRow({
+      table: 'transactions',
+      userId: req.user.id,
+      id,
+      beforeId: Number.isFinite(beforeId) ? beforeId : null,
+      copyDate: true,
+      dateCol: 'date',
+      orderSql: 'date DESC, rank DESC, id DESC',
+    });
+    if (result.missing) return res.status(404).json({ error: 'Transacao nao encontrada' });
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro ao posicionar transacao:', err);
+    return res.status(500).json({ error: 'Erro ao reordenar lancamento' });
+  }
+});
+
+app.post('/debts/:id/place', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+  try {
+    const result = await placeOwnedRow({
+      table: 'debts',
+      userId: req.user.id,
+      id,
+      beforeId: Number.isFinite(beforeId) ? beforeId : null,
+      orderSql: 'rank DESC, id DESC',
+    });
+    if (result.missing) return res.status(404).json({ error: 'Divida nao encontrada' });
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro ao posicionar divida:', err);
+    return res.status(500).json({ error: 'Erro ao reordenar' });
+  }
+});
+
+app.post('/subscriptions/:id/place', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+  try {
+    const result = await placeOwnedRow({
+      table: 'subscriptions',
+      userId: req.user.id,
+      id,
+      beforeId: Number.isFinite(beforeId) ? beforeId : null,
+      orderSql: 'rank DESC, id DESC',
+    });
+    if (result.missing) return res.status(404).json({ error: 'Assinatura nao encontrada' });
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro ao posicionar assinatura:', err);
+    return res.status(500).json({ error: 'Erro ao reordenar' });
+  }
+});
+
+app.post('/savings/:id/place', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+  try {
+    const result = await placeOwnedRow({
+      table: 'savings',
+      userId: req.user.id,
+      id,
+      beforeId: Number.isFinite(beforeId) ? beforeId : null,
+      orderSql: 'rank DESC, id DESC',
+    });
+    if (result.missing) return res.status(404).json({ error: 'Item nao encontrado' });
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro ao posicionar guardado:', err);
+    return res.status(500).json({ error: 'Erro ao reordenar' });
+  }
+});
+
+app.post('/cards/:cardId/charges/:id/place', authenticateToken, async (req, res) => {
+  const cardId = Number(req.params.cardId);
+  const id = Number(req.params.id);
+  const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
+  if (!cardId || !id) return res.status(400).json({ error: 'Dados invalidos' });
+  try {
+    const result = await placeOwnedRow({
+      table: 'card_charges',
+      userId: req.user.id,
+      id,
+      beforeId: Number.isFinite(beforeId) ? beforeId : null,
+      extraSql: 'AND card_id = $2',
+      extraParams: [cardId],
+      orderSql: 'rank DESC, id DESC',
+    });
+    if (result.missing) return res.status(404).json({ error: 'Lancamento nao encontrado' });
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro ao posicionar compra:', err);
+    return res.status(500).json({ error: 'Erro ao reordenar' });
   }
 });
 
@@ -687,11 +894,13 @@ app.post('/imports/statement', authenticateToken, async (req, res) => {
 
       const category = mapBankCategory(`${row.category || ''} ${description}`, type);
       const categoryId = await resolveCategoryId(req.user.id, type, { category });
-      await client.query(
+      const inserted = await client.query(
         `INSERT INTO transactions (description, amount, type, user_id, category_id, date)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
         [description, amount, type, req.user.id, categoryId, date]
       );
+      await stampPosition(client, inserted.rows[0].id);
       added += 1;
     }
 
@@ -822,16 +1031,25 @@ async function ownedCard(userId, cardId) {
   return Boolean(owned.rows[0]);
 }
 
+async function debtsForUser(userId) {
+  const result = await db.query(
+    `SELECT id, name, kind, amount::float8 AS amount, due_date::text AS due_date, notes, paid_at, card_id, created_at, position
+     FROM debts
+     WHERE user_id = $1
+     ORDER BY (paid_at IS NULL) DESC, position DESC, due_date NULLS LAST, id DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
+async function walletSnapshot(userId) {
+  const [cards, debts] = await Promise.all([cardsForUser(userId), debtsForUser(userId)]);
+  return { cards, debts };
+}
+
 app.get('/debts', authenticateToken, async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at
-       FROM debts
-       WHERE user_id = $1
-       ORDER BY (paid_at IS NULL) DESC, due_date NULLS LAST, id DESC`,
-      [req.user.id]
-    );
-    return res.json(result.rows);
+    return res.json(await debtsForUser(req.user.id));
   } catch (err) {
     console.error('Erro ao listar dividas:', err);
     return res.status(500).json({ error: 'Erro ao listar dividas' });
@@ -847,9 +1065,10 @@ app.post('/debts', authenticateToken, async (req, res) => {
     const result = await db.query(
       `INSERT INTO debts (user_id, name, kind, amount, due_date, notes, paid_at, card_id)
        VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7 THEN NOW() ELSE NULL END, $8)
-       RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at`,
+       RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at, position`,
       [req.user.id, debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid, debt.cardId]
     );
+    await stampTablePosition('debts', result.rows[0].id);
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Erro ao criar divida:', err);
@@ -934,7 +1153,96 @@ function chargePayload(body) {
 }
 
 const CARD_SELECT = `id, issuer, brand, last4, color, credit_limit::float8 AS credit_limit, created_at`;
-const CHARGE_SELECT = `id, card_id, description, amount::float8 AS amount, spent_at::text AS spent_at, paid_at, created_at`;
+const CHARGE_SELECT = `id, card_id, description, amount::float8 AS amount, spent_at::text AS spent_at, paid_at, created_at, position`;
+
+function roundMoney(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function spMonth() {
+  return new Date().toLocaleString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+}
+
+function invoiceIsFutureDue(due, month) {
+  const day = String(due || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  return day.slice(0, 7) > month;
+}
+
+async function adjustCardInvoice(client, userId, card, delta) {
+  const value = roundMoney(delta);
+  if (!card || !value) return false;
+  const month = spMonth();
+  const listed = await client.query(
+    `SELECT id, name, amount::float8 AS amount, due_date::text AS due_date, notes, paid_at, card_id
+     FROM debts
+     WHERE user_id = $1 AND kind = 'credit_card' AND (card_id = $2 OR card_id IS NULL)
+     ORDER BY (card_id = $2) DESC, (paid_at IS NULL) DESC, due_date NULLS LAST, id DESC`,
+    [userId, card.id]
+  );
+  const linked = listed.rows.filter((row) => Number(row.card_id) === Number(card.id));
+  const unlinked = listed.rows.filter((row) => !row.card_id);
+  const issuer = String(card.issuer || '').toLowerCase();
+  const named = unlinked.filter((row) => issuer && String(row.name || '').toLowerCase().includes(issuer));
+  const pool = linked.length ? linked : named.length ? named : unlinked.length === 1 ? unlinked : [];
+  const open = pool.filter((row) => !row.paid_at);
+  const paid = pool.filter((row) => row.paid_at);
+
+  if (value < 0) {
+    let left = -value;
+    let changed = false;
+    open.sort((a, b) => String(a.due_date || '9999').localeCompare(String(b.due_date || '9999')));
+    for (const debt of open) {
+      if (left <= 0.009) break;
+      const current = roundMoney(debt.amount);
+      const take = Math.min(current, left);
+      if (take <= 0.009) continue;
+      const next = roundMoney(current - take);
+      left = roundMoney(left - take);
+      if (next <= 0.009) {
+        await client.query(
+          'UPDATE debts SET paid_at = COALESCE(paid_at, NOW()), card_id = $1 WHERE id = $2 AND user_id = $3',
+          [card.id, debt.id, userId]
+        );
+      } else {
+        await client.query(
+          'UPDATE debts SET amount = $1, paid_at = NULL, card_id = $2 WHERE id = $3 AND user_id = $4',
+          [next, card.id, debt.id, userId]
+        );
+      }
+      changed = true;
+    }
+    return changed;
+  }
+
+  const current = open.find((debt) => !invoiceIsFutureDue(debt.due_date, month)) || open[0];
+  if (current) {
+    await client.query(
+      'UPDATE debts SET amount = $1, paid_at = NULL, card_id = $2 WHERE id = $3 AND user_id = $4',
+      [roundMoney(Number(current.amount) + value), card.id, current.id, userId]
+    );
+    return true;
+  }
+
+  const lastPaid = paid
+    .filter((debt) => !invoiceIsFutureDue(debt.due_date, month))
+    .sort((a, b) => String(b.paid_at || '').localeCompare(String(a.paid_at || '')))[0];
+  if (lastPaid) {
+    await client.query(
+      'UPDATE debts SET amount = $1, paid_at = NULL, card_id = $2 WHERE id = $3 AND user_id = $4',
+      [value, card.id, lastPaid.id, userId]
+    );
+    return true;
+  }
+
+  const [year, mon] = month.split('-');
+  await client.query(
+    `INSERT INTO debts (user_id, name, kind, amount, notes, card_id)
+     VALUES ($1, $2, 'credit_card', $3, $4, $5)`,
+    [userId, `Fatura ${card.issuer} ${mon}/${year}`, value, 'Fatura do cartão', card.id]
+  );
+  return true;
+}
 
 async function cardsForUser(userId) {
   const cards = await db.query(
@@ -942,7 +1250,7 @@ async function cardsForUser(userId) {
     [userId]
   );
   const charges = await db.query(
-    `SELECT ${CHARGE_SELECT} FROM card_charges WHERE user_id = $1 ORDER BY spent_at DESC, id DESC`,
+    `SELECT ${CHARGE_SELECT} FROM card_charges WHERE user_id = $1 ORDER BY position DESC, spent_at DESC, id DESC`,
     [userId]
   );
   const byId = new Map(cards.rows.map((card) => [card.id, { ...card, charges: [] }]));
@@ -1021,19 +1329,32 @@ app.post('/cards/:id/charges', authenticateToken, async (req, res) => {
   const charge = chargePayload(req.body || {});
   if (!cardId || !charge) return res.status(400).json({ error: 'Dados invalidos' });
 
+  const client = await db.pool.connect();
   try {
-    const owned = await db.query('SELECT id FROM cards WHERE id = $1 AND user_id = $2', [cardId, req.user.id]);
-    if (!owned.rows[0]) return res.status(404).json({ error: 'Cartao nao encontrado' });
-    const result = await db.query(
+    await client.query('BEGIN');
+    const owned = await client.query('SELECT id, issuer FROM cards WHERE id = $1 AND user_id = $2', [cardId, req.user.id]);
+    const card = owned.rows[0];
+    if (!card) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cartao nao encontrado' });
+    }
+    const result = await client.query(
       `INSERT INTO card_charges (user_id, card_id, description, amount, spent_at, paid_at)
        VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN NOW() ELSE NULL END)
        RETURNING ${CHARGE_SELECT}`,
       [req.user.id, cardId, charge.description, charge.amount, charge.spentAt, charge.paid]
     );
-    return res.status(201).json(result.rows[0]);
+    await client.query('UPDATE card_charges SET position = $1 WHERE id = $1 AND position = 0', [result.rows[0].id]);
+    if (!charge.paid) await adjustCardInvoice(client, req.user.id, card, charge.amount);
+    await client.query('COMMIT');
+    const snap = await walletSnapshot(req.user.id);
+    return res.status(201).json({ ...result.rows[0], ...snap });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Erro ao lancar no cartao:', err);
     return res.status(500).json({ error: 'Erro ao lancar no cartao' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1043,8 +1364,29 @@ app.put('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) => {
   const charge = chargePayload(req.body || {});
   if (!cardId || !chargeId || !charge) return res.status(400).json({ error: 'Dados invalidos' });
 
+  const client = await db.pool.connect();
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+    const owned = await client.query('SELECT id, issuer FROM cards WHERE id = $1 AND user_id = $2', [cardId, req.user.id]);
+    const card = owned.rows[0];
+    if (!card) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cartao nao encontrado' });
+    }
+    const previous = await client.query(
+      `SELECT amount::float8 AS amount, paid_at
+       FROM card_charges
+       WHERE id = $1 AND card_id = $2 AND user_id = $3`,
+      [chargeId, cardId, req.user.id]
+    );
+    if (!previous.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Lancamento nao encontrado' });
+    }
+    let delta = 0;
+    if (!previous.rows[0].paid_at) delta -= Number(previous.rows[0].amount);
+    if (!charge.paid) delta += charge.amount;
+    const result = await client.query(
       `UPDATE card_charges
        SET description = $1,
            amount = $2,
@@ -1054,11 +1396,16 @@ app.put('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) => {
        RETURNING ${CHARGE_SELECT}`,
       [charge.description, charge.amount, charge.spentAt, charge.paid, chargeId, cardId, req.user.id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Lancamento nao encontrado' });
-    return res.json(result.rows[0]);
+    if (delta) await adjustCardInvoice(client, req.user.id, card, delta);
+    await client.query('COMMIT');
+    const snap = await walletSnapshot(req.user.id);
+    return res.json({ ...result.rows[0], ...snap });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Erro ao editar lancamento do cartao:', err);
     return res.status(500).json({ error: 'Erro ao editar lancamento do cartao' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1067,16 +1414,37 @@ app.delete('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) =
   const chargeId = Number(req.params.chargeId);
   if (!cardId || !chargeId) return res.status(400).json({ error: 'Dados invalidos' });
 
+  const client = await db.pool.connect();
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+    const owned = await client.query('SELECT id, issuer FROM cards WHERE id = $1 AND user_id = $2', [cardId, req.user.id]);
+    const card = owned.rows[0];
+    const previous = await client.query(
+      `SELECT amount::float8 AS amount, paid_at
+       FROM card_charges
+       WHERE id = $1 AND card_id = $2 AND user_id = $3`,
+      [chargeId, cardId, req.user.id]
+    );
+    if (!card || !previous.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Lancamento nao encontrado' });
+    }
+    const result = await client.query(
       'DELETE FROM card_charges WHERE id = $1 AND card_id = $2 AND user_id = $3',
       [chargeId, cardId, req.user.id]
     );
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Lancamento nao encontrado' });
-    return res.json({ deleted: result.rowCount });
+    if (!previous.rows[0].paid_at) {
+      await adjustCardInvoice(client, req.user.id, card, -Number(previous.rows[0].amount));
+    }
+    await client.query('COMMIT');
+    const snap = await walletSnapshot(req.user.id);
+    return res.json({ deleted: result.rowCount, ...snap });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Erro ao excluir lancamento do cartao:', err);
     return res.status(500).json({ error: 'Erro ao excluir lancamento do cartao' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1211,7 +1579,7 @@ app.get('/subscriptions', authenticateToken, async (req, res) => {
       `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at
        FROM subscriptions
        WHERE user_id = $1
-       ORDER BY active DESC, due_date NULLS LAST, id DESC`,
+       ORDER BY active DESC, position DESC, due_date NULLS LAST, id DESC`,
       [req.user.id]
     );
     return res.json(result.rows);
@@ -1232,6 +1600,7 @@ app.post('/subscriptions', authenticateToken, async (req, res) => {
        RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
       [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates]
     );
+    await stampTablePosition('subscriptions', result.rows[0].id);
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Erro ao criar assinatura:', err);
@@ -1322,7 +1691,7 @@ function savingPayload(body) {
 
 async function listSavings(userId) {
   const result = await db.query(
-    `SELECT s.id, s.name, s.kind, s.category, s.amount, s.notes, s.created_at,
+    `SELECT s.id, s.name, s.kind, s.category, s.amount, s.notes, s.created_at, s.position,
             COALESCE(
               (
                 SELECT json_agg(
@@ -1340,7 +1709,7 @@ async function listSavings(userId) {
             ) AS entries
      FROM savings s
      WHERE s.user_id = $1
-     ORDER BY s.kind, s.category, s.id DESC`,
+     ORDER BY s.position DESC, s.kind, s.category, s.id DESC`,
     [userId]
   );
   return result.rows;
@@ -1385,6 +1754,7 @@ app.post('/savings', authenticateToken, async (req, res) => {
       [req.user.id, item.name, item.kind, item.category, item.amount, item.notes]
     );
     const id = result.rows[0].id;
+    await stampTablePosition('savings', id);
     if (item.kind === 'piggy') {
       const entries = listed || (item.amount > 0 ? [{ amount: item.amount, deposited_at: cleanDay(req.body?.deposited_at) || saoPauloDay() }] : []);
       if (entries.length) await insertPiggyEntries(req.user.id, id, entries);

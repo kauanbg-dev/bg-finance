@@ -63,6 +63,9 @@ const ICON = {
   edit: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3l-9 9a2 2 0 0 1-.85.5l-2.9.85a.5.5 0 0 1-.6-.6l.85-2.9a2 2 0 0 1 .5-.85z"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  up: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  grip: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="9" cy="7" r="1.6"/><circle cx="15" cy="7" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="17" r="1.6"/><circle cx="15" cy="17" r="1.6"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 13l2.5-7h11L20 13v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -537,8 +540,10 @@ function previewApi(method, url, body) {
         skipped += 1;
         continue;
       }
+      const createdId = ++previewSeq;
       allTransactions.push({
-        id: ++previewSeq,
+        id: createdId,
+        position: createdId,
         description,
         amount,
         type,
@@ -644,7 +649,8 @@ function previewApi(method, url, body) {
       }
       return { settled, amount: Math.round((amount - left) * 100) / 100 };
     }
-    if (method === "POST" && parts[2] === "charges") {
+    if (method === "POST" && parts[4] === "place") return { placed: true };
+    if (method === "POST" && parts[2] === "charges" && parts.length < 5) {
       const created = {
         id: ++previewSeq,
         card_id: card.id,
@@ -666,6 +672,7 @@ function previewApi(method, url, body) {
       });
       return { ...charge };
     }
+    if (method === "POST" && parts[4] === "place") return { placed: true };
     if (method === "DELETE" && charge) {
       card.charges = card.charges.filter((item) => item !== charge);
       return { deleted: 1 };
@@ -676,6 +683,7 @@ function previewApi(method, url, body) {
     seedPreviewDebts();
     const id = url.split("/")[2];
     if (method === "GET") return previewDebts.map((d) => ({ ...d }));
+    if (method === "POST" && url.split("/")[3] === "place") return { placed: true };
     if (method === "POST") {
       const created = { ...body, id: ++previewSeq, paid_at: body.paid ? new Date().toISOString() : null };
       previewDebts.unshift(created);
@@ -697,6 +705,7 @@ function previewApi(method, url, body) {
     seedPreviewSubs();
     const id = url.split("/")[2];
     if (method === "GET") return previewSubs.map((item) => ({ ...item }));
+    if (method === "POST" && url.split("/")[3] === "place") return { placed: true };
     if (method === "POST") {
       const created = {
         id: ++previewSeq,
@@ -750,6 +759,7 @@ function previewApi(method, url, body) {
         entries: (item.entries || []).map((entry) => ({ ...entry })),
       }));
     }
+    if (method === "POST" && parts[2] === "place") return { placed: true };
     if (method === "POST") {
       const copied = Array.isArray(body.entries)
         ? body.entries.map((entry) => ({
@@ -794,10 +804,14 @@ function previewApi(method, url, body) {
     return {};
   }
   const id = url.split("/")[2];
+  if (method === "POST" && (url.split("/")[3] === "move" || url.split("/")[3] === "place")) {
+    return { moved: true, placed: true };
+  }
   if (method === "GET") return allTransactions.map((t) => ({ ...t }));
   if (method === "POST") {
-    allTransactions.push({ ...body, id: ++previewSeq, category_name: body.category });
-    return { id: previewSeq };
+    const createdId = ++previewSeq;
+    allTransactions.push({ ...body, id: createdId, position: createdId, category_name: body.category });
+    return { id: createdId };
   }
   const index = allTransactions.findIndex((t) => String(t.id) === id);
   if (method === "PUT" && index >= 0) {
@@ -1310,13 +1324,163 @@ function emptyRow(message) {
   tbody.innerHTML = `<tr class="empty-row"><td colspan="6"><div class="empty-state">${ICON.inbox}<span>${message}</span></div></td></tr>`;
 }
 
-function renderTable(rows) {
-  const sorted = [...rows].sort((a, b) => {
+function txRank(t) {
+  const pos = Number(t.position);
+  return Number.isFinite(pos) && pos !== 0 ? pos : Number(t.id) || 0;
+}
+
+function placeLocal(list, id, beforeId, copyDate, dateKey = "date") {
+  const from = list.findIndex((item) => String(item.id) === String(id));
+  if (from < 0) return false;
+  const moved = list[from];
+  let to = beforeId == null || beforeId === "" ? list.length : list.findIndex((item) => String(item.id) === String(beforeId));
+  if (to < 0) to = list.length;
+  if (to === from || to === from + 1) return false;
+  list.splice(from, 1);
+  if (from < to) to -= 1;
+  list.splice(to, 0, moved);
+  const neighbor = list[to + 1] || list[to - 1];
+  if (copyDate && neighbor) moved[dateKey] = neighbor[dateKey];
+  const before = list[to + 1];
+  const after = list[to - 1];
+  const b = before ? txRank(before) : null;
+  const a = after ? txRank(after) : null;
+  let next = moved.position;
+  if (b != null && a != null) next = Math.round((a + b) / 2);
+  else if (b != null) next = b + 1;
+  else if (a != null) next = a - 1;
+  if (b != null && next === b) next = b + 1;
+  moved.position = next;
+  return true;
+}
+
+function dragHandle(label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "drag-handle";
+  btn.title = "Segure e arraste";
+  btn.setAttribute("aria-label", label || "Arrastar");
+  btn.innerHTML = ICON.grip;
+  return btn;
+}
+
+function bindBlockDrag(el, kind, onDrop) {
+  let press = 0;
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
+  let didMove = false;
+  let ghost = null;
+
+  function clearMarks() {
+    document.querySelectorAll(".drop-before").forEach((node) => node.classList.remove("drop-before"));
+  }
+
+  function beforeIdAt(y) {
+    const nodes = [...document.querySelectorAll(`[data-drag="${kind}"]`)].filter((node) => node.offsetParent && node !== el);
+    for (const node of nodes) {
+      const box = node.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return node.dataset.id;
+    }
+    return null;
+  }
+
+  function lift(event) {
+    dragging = true;
+    didMove = false;
+    el.classList.add("is-dragging");
+    try {
+      el.setPointerCapture(event.pointerId);
+    } catch (_) {
+      /* ignore */
+    }
+    ghost = el.cloneNode(true);
+    ghost.classList.add("drag-ghost");
+    ghost.style.width = `${el.getBoundingClientRect().width}px`;
+    document.body.appendChild(ghost);
+    ghost.style.left = `${event.clientX - 24}px`;
+    ghost.style.top = `${event.clientY - 16}px`;
+  }
+
+  function stop() {
+    clearTimeout(press);
+    press = 0;
+    pointerId = null;
+    dragging = false;
+    el.classList.remove("is-dragging");
+    ghost?.remove();
+    ghost = null;
+    clearMarks();
+  }
+
+  el.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (event.target.closest("a, input, select, textarea, summary, .pay-btn, .action-btn, .btn, .charge-more, .piggy-open")) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    pointerId = event.pointerId;
+    didMove = false;
+    if (event.target.closest(".drag-handle")) lift(event);
+    else press = window.setTimeout(() => lift(event), 160);
+  });
+
+  el.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== pointerId) return;
+    if (!dragging) {
+      if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) {
+        clearTimeout(press);
+        press = 0;
+      }
+      return;
+    }
+    event.preventDefault();
+    didMove = true;
+    if (ghost) {
+      ghost.style.left = `${event.clientX - 24}px`;
+      ghost.style.top = `${event.clientY - 16}px`;
+    }
+    clearMarks();
+    const nextId = beforeIdAt(event.clientY);
+    const mark = nextId
+      ? document.querySelector(`[data-drag="${kind}"][data-id="${nextId}"]`)
+      : [...document.querySelectorAll(`[data-drag="${kind}"]`)].filter((node) => node.offsetParent && node !== el).at(-1);
+    mark?.classList.add("drop-before");
+  }, { passive: false });
+
+  const end = (event) => {
+    if (pointerId != null && event.pointerId !== pointerId) return;
+    const dropped = dragging && didMove;
+    const y = event.clientY;
+    stop();
+    if (!dropped) return;
+    el.dataset.dragged = "1";
+    onDrop(beforeIdAt(y));
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+  el.addEventListener("click", (event) => {
+    if (el.dataset.dragged === "1") {
+      event.preventDefault();
+      event.stopPropagation();
+      delete el.dataset.dragged;
+    }
+  }, true);
+}
+
+function sortTxList(rows) {
+  return [...rows].sort((a, b) => {
     let va = a[sortKey];
     let vb = b[sortKey];
     if (sortKey === "date") {
       va = txDate(a);
       vb = txDate(b);
+      if (va === vb) {
+        const ra = txRank(a);
+        const rb = txRank(b);
+        if (ra !== rb) return sortDir === "asc" ? ra - rb : rb - ra;
+        return Number(b.id) - Number(a.id);
+      }
     }
     if (sortKey === "category") {
       va = inferCategory(a);
@@ -1332,6 +1496,10 @@ function renderTable(rows) {
     if (va > vb) return sortDir === "asc" ? 1 : -1;
     return 0;
   });
+}
+
+function renderTable(rows) {
+  const sorted = sortTxList(rows);
 
   document.querySelectorAll(".sheet thead th[data-sort]").forEach((th) => {
     th.classList.toggle("sorted", th.dataset.sort === sortKey);
@@ -1385,7 +1553,7 @@ function appendSpanRow(className, fill) {
   tbody.appendChild(head);
 }
 
-function appendDayCard(iso, ordered) {
+function appendDayCard(iso, ordered, sortedList) {
   const parts = dayParts(iso);
   appendSpanRow("day-card-row", (cell) => {
     const card = document.createElement("div");
@@ -1402,10 +1570,16 @@ function appendDayCard(iso, ordered) {
     const list = document.createElement("div");
     list.className = "day-items";
     ordered.forEach((t, index) => {
+      const line = document.createElement("div");
+      line.className = "day-line";
+      if (index > 0) line.classList.add("has-edge");
+      line.dataset.drag = "tx";
+      line.dataset.id = String(t.id);
+      line.appendChild(dragHandle(`Arrastar ${t.description}`));
+      bindBlockDrag(line, "tx", (beforeId) => placeTransaction(t, beforeId));
       const row = document.createElement("button");
       row.type = "button";
       row.className = "day-item";
-      if (index > 0 && t.type !== "income" && ordered[index - 1].type === "income") row.classList.add("day-split");
       const desc = document.createElement("span");
       desc.className = "day-item-desc";
       desc.textContent = t.description;
@@ -1414,7 +1588,8 @@ function appendDayCard(iso, ordered) {
       amt.textContent = `${t.type === "expense" ? "− " : "+ "}${money(t.amount)}`;
       row.append(desc, amt);
       row.addEventListener("click", () => openEditModal(t));
-      list.appendChild(row);
+      line.append(row);
+      list.appendChild(line);
     });
     card.append(rail, list);
     cell.appendChild(card);
@@ -1439,15 +1614,12 @@ function renderDays(sorted, month) {
         cell.textContent = `${MONTHS_LONG[Number(rowMonth.slice(5)) - 1]} ${rowMonth.slice(0, 4)}`;
       });
     }
-    const incomes = items.filter((t) => t.type === "income");
-    const expenses = items.filter((t) => t.type !== "income");
-    const ordered = [...incomes, ...expenses];
-    appendDayCard(day, ordered);
+    const ordered = items;
+    appendDayCard(day, ordered, sorted);
     ordered.forEach((t, index) => {
       const classes = [];
       if (index === 0) classes.push("day-start");
-      if (index === incomes.length && incomes.length && expenses.length) classes.push("day-split");
-      appendTxRow(t, true, classes, index === 0 ? ordered.length : -1);
+      appendTxRow(t, true, classes, index === 0 ? ordered.length : -1, sorted);
     });
     shown += items.length;
   }
@@ -1455,11 +1627,43 @@ function renderDays(sorted, month) {
 }
 
 function renderFlat(sorted) {
-  sorted.slice(0, visibleCount).forEach((t) => appendTxRow(t, false));
+  sorted.slice(0, visibleCount).forEach((t) => appendTxRow(t, false, [], 0, sorted));
   return Math.min(sorted.length, visibleCount);
 }
 
-function appendTxRow(t, inDay, classes = [], dateSpan = 0) {
+async function placeTransaction(t, beforeId) {
+  if (!placeLocal(sortTxList(filteredRows()), t.id, beforeId, true, "date")) return;
+  renderDashboard();
+  try {
+    await api("POST", `/transactions/${t.id}/place`, { before_id: beforeId });
+  } catch (err) {
+    toast(err.message, "error");
+    await loadTransactions();
+  }
+}
+
+async function moveTransaction(t, dir) {
+  const group = sortTxList(filteredRows());
+  const index = group.findIndex((item) => String(item.id) === String(t.id));
+  const other = dir === "up" ? group[index - 1] : group[index + 1];
+  if (index < 0 || !other) return;
+  const a = txRank(t);
+  const b = txRank(other);
+  const dateA = t.date;
+  t.date = other.date;
+  other.date = dateA;
+  t.position = b === a ? b + (dir === "up" ? 1 : -1) : b;
+  other.position = a;
+  renderDashboard();
+  try {
+    await api("POST", `/transactions/${t.id}/move`, { dir });
+  } catch (err) {
+    toast(err.message, "error");
+    await loadTransactions();
+  }
+}
+
+function appendTxRow(t, inDay, classes = [], dateSpan = 0, dayGroup = []) {
     const tr = document.createElement("tr");
     if (inDay) tr.classList.add("in-day");
     classes.forEach((name) => tr.classList.add(name));
@@ -1527,7 +1731,7 @@ function appendTxRow(t, inDay, classes = [], dateSpan = 0) {
     delBtn.setAttribute("aria-label", "Excluir");
     delBtn.innerHTML = ICON.trash;
     delBtn.addEventListener("click", () => deleteTransaction(t));
-    actions.append(editBtn, delBtn);
+    actions.append(dragHandle(`Arrastar ${t.description}`), editBtn, delBtn);
     actTd.appendChild(actions);
     tr.appendChild(actTd);
     tr.addEventListener("click", (event) => {
@@ -1535,6 +1739,9 @@ function appendTxRow(t, inDay, classes = [], dateSpan = 0) {
       if (!window.matchMedia("(max-width: 719px)").matches) return;
       openEditModal(t);
     });
+    tr.dataset.drag = "tx";
+    tr.dataset.id = String(t.id);
+    bindBlockDrag(tr, "tx", (beforeId) => placeTransaction(t, beforeId));
     tbody.appendChild(tr);
 }
 
@@ -2033,7 +2240,8 @@ function demoTransactions() {
   let id = 1;
   const add = (monthsAgo, day, description, amount, type, category) => {
     const ym = shiftMonth(base, -monthsAgo);
-    items.push({ id: id++, description, amount, type, category_name: category, date: `${ym}-${pad(day)}` });
+    const n = id++;
+    items.push({ id: n, position: n, description, amount, type, category_name: category, date: `${ym}-${pad(day)}` });
   };
   [2, 1, 0].forEach((ago) => {
     add(ago, 5, "Salário", 4800, "income", "Salário");
@@ -2817,7 +3025,24 @@ function debtCard(debt, bucket) {
     actions.append(pay, debtAction(ICON.edit, "Editar", () => startEditDebt(debt)));
   }
   actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeDebt(debt), "delete"));
+  actions.prepend(dragHandle(`Arrastar ${debt.name}`));
   article.append(top, actions);
+  const dragKind = `debt-${bucket}-${String(debtDay(debt) || "").slice(0, 7)}`;
+  article.dataset.drag = dragKind;
+  article.dataset.id = String(debt.id);
+  bindBlockDrag(article, dragKind, async (beforeId) => {
+    const month = String(debtDay(debt) || "").slice(0, 7);
+    const ordered = debts
+      .filter((item) => Boolean(item.paid_at) === (bucket === "paid") && String(debtDay(item) || "").slice(0, 7) === month)
+      .sort((a, b) => txRank(b) - txRank(a) || String(debtDay(a)).localeCompare(String(debtDay(b))));
+    if (!placeLocal(ordered, debt.id, beforeId, false)) return;
+    renderDebts();
+    try {
+      await api("POST", `/debts/${debt.id}/place`, { before_id: beforeId });
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
   return article;
 }
 
@@ -2849,7 +3074,7 @@ function renderMonthStack(hostId, items, dayOf, cardFor, options = {}) {
   });
   const scope = options.fold || (typeof hostId === "string" ? hostId : "months");
   host.replaceChildren(...keys.map((key) => {
-    const list = groups.get(key).sort((a, b) => String(dayOf(a)).localeCompare(String(dayOf(b))));
+    const list = groups.get(key).sort((a, b) => (txRank(b) - txRank(a)) || String(dayOf(a)).localeCompare(String(dayOf(b))));
     const section = document.createElement("div");
     section.className = "sheet-card debt-group";
     if (!options.history && key && key < now) section.classList.add("is-late-month");
@@ -3411,7 +3636,23 @@ function subCard(sub, bucket) {
     actions.append(pay, debtAction(ICON.edit, "Editar", () => startEditSub(sub)));
   }
   actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeSub(sub), "delete"));
+  actions.prepend(dragHandle(`Arrastar ${sub.name}`));
   article.append(top, actions);
+  const dragKind = `sub-${bucket}`;
+  article.dataset.drag = dragKind;
+  article.dataset.id = String(sub.id);
+  bindBlockDrag(article, dragKind, async (beforeId) => {
+    const ordered = subscriptions
+      .filter((item) => subBucket(item) === bucket)
+      .sort((a, b) => txRank(b) - txRank(a) || subDay(a).localeCompare(subDay(b)));
+    if (!placeLocal(ordered, sub.id, beforeId, false)) return;
+    renderSubscriptions();
+    try {
+      await api("POST", `/subscriptions/${sub.id}/place`, { before_id: beforeId });
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
   return article;
 }
 
@@ -3420,7 +3661,7 @@ function fillSubGroup(id, items, bucket) {
   const list = card?.querySelector(".debt-list");
   const sum = card?.querySelector("[data-sum]");
   if (!card || !list) return;
-  const ordered = [...items].sort((a, b) => subDay(a).localeCompare(subDay(b)));
+  const ordered = [...items].sort((a, b) => txRank(b) - txRank(a) || subDay(a).localeCompare(subDay(b)));
   card.hidden = ordered.length === 0;
   list.replaceChildren(...ordered.map((sub) => subCard(sub, bucket)));
   if (sum) sum.textContent = ordered.length ? money(sumDebts(ordered)) : "";
@@ -4023,10 +4264,26 @@ function saveRow(item) {
     actions.appendChild(toggle);
   }
   actions.append(
+    dragHandle(`Arrastar ${item.name}`),
     debtAction(ICON.edit, "Editar", () => startEditSave(item)),
     debtAction(ICON.trash, "Excluir", () => removeSave(item), "delete")
   );
   row.append(main, amount, actions);
+  const kind = `save-${item.kind}-${item.category}`;
+  row.dataset.drag = kind;
+  row.dataset.id = String(item.id);
+  bindBlockDrag(row, kind, async (beforeId) => {
+    const ordered = savings
+      .filter((entry) => entry.kind === item.kind && entry.category === item.category)
+      .sort((a, b) => txRank(b) - txRank(a) || String(a.name).localeCompare(String(b.name)));
+    if (!placeLocal(ordered, item.id, beforeId, false)) return;
+    renderSavings();
+    try {
+      await api("POST", `/savings/${item.id}/place`, { before_id: beforeId });
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
   if (open) row.appendChild(piggyLog(item));
   return row;
 }
@@ -4044,7 +4301,7 @@ function saveCategoryCard(category, items) {
   top.append(title, sum);
   const list = document.createElement("div");
   list.className = "save-items";
-  list.append(...items.map(saveRow));
+  list.append(...[...items].sort((a, b) => txRank(b) - txRank(a) || String(a.name).localeCompare(String(b.name))).map(saveRow));
   card.append(top, list);
   return card;
 }
@@ -4321,7 +4578,7 @@ function startEditCharge(card, charge) {
 }
 
 function selectedCard() {
-  return wallet.find((card) => card.id === selectedCardId) || wallet[0] || null;
+  return wallet.find((card) => String(card.id) === String(selectedCardId)) || wallet[0] || null;
 }
 
 function paintWalletButton() {
@@ -4353,7 +4610,13 @@ function cardInvoices(card) {
 }
 
 function cardDebtList(card) {
-  return debts.filter((debt) => debt.kind === "credit_card" && String(debt.card_id || "") === String(card.id));
+  const linked = debts.filter((debt) => debt.kind === "credit_card" && String(debt.card_id || "") === String(card.id));
+  if (linked.length) return linked;
+  const issuer = String(card.issuer || "").toLowerCase();
+  const unlinked = debts.filter((debt) => debt.kind === "credit_card" && !debt.card_id);
+  const named = unlinked.filter((debt) => issuer && String(debt.name || "").toLowerCase().includes(issuer));
+  if (named.length) return named;
+  return unlinked.length === 1 ? unlinked : [];
 }
 
 function invoiceIsFuture(debt) {
@@ -4364,6 +4627,58 @@ function invoiceIsFuture(debt) {
 
 function roundMoney(value) {
   return Math.round(Number(value) * 100) / 100;
+}
+
+function applyWalletSnapshot(payload) {
+  if (!payload || !Array.isArray(payload.cards) || !Array.isArray(payload.debts)) return false;
+  wallet = payload.cards;
+  debts = payload.debts;
+  if (!wallet.some((card) => String(card.id) === String(selectedCardId))) selectedCardId = wallet[0]?.id ?? null;
+  fillImportCards();
+  syncDebtCardField();
+  renderDebts();
+  return true;
+}
+
+async function reloadWallet() {
+  try {
+    const [cards, nextDebts] = await Promise.all([api("GET", "/cards"), api("GET", "/debts")]);
+    applyWalletSnapshot({ cards, debts: nextDebts });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function bumpInvoiceLocal(card, delta) {
+  const value = roundMoney(delta);
+  if (!card || !value) return;
+  const open = cardDebtList(card)
+    .filter((debt) => !debt.paid_at)
+    .sort((a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+  if (value < 0) {
+    let left = -value;
+    for (const debt of open) {
+      if (left <= 0.009) break;
+      const current = roundMoney(debt.amount);
+      const take = Math.min(current, left);
+      const next = roundMoney(current - take);
+      left = roundMoney(left - take);
+      if (next <= 0.009) debt.paid_at = debt.paid_at || new Date().toISOString();
+      else debt.amount = next;
+    }
+    return;
+  }
+  const statement = open.find((debt) => !invoiceIsFuture(debt)) || open[0];
+  if (statement) {
+    statement.amount = roundMoney(Number(statement.amount) + value);
+    statement.paid_at = null;
+    if (!statement.card_id) statement.card_id = card.id;
+  }
+}
+
+async function syncWallet(result) {
+  if (applyWalletSnapshot(result)) return;
+  if (!previewMode) await reloadWallet();
 }
 
 async function saveInvoice(debt, amount, paid) {
@@ -4416,7 +4731,18 @@ async function applyChargeToInvoices(card, amount, paying) {
     open[0].amount = next;
     return true;
   }
-  return false;
+  const month = today().slice(0, 7);
+  const created = await api("POST", "/debts", {
+    name: `Fatura ${card.issuer} ${month.slice(5)}/${month.slice(0, 4)}`,
+    kind: "credit_card",
+    amount: value,
+    due_date: "",
+    notes: "Fatura do cartão",
+    paid: false,
+    card_id: card.id,
+  });
+  debts.unshift(created);
+  return true;
 }
 
 function cardLimitUse(card) {
@@ -4508,8 +4834,24 @@ function chargeRow(card, charge) {
   });
   menu.append(edit, remove);
   more.append(summary, menu);
-  actions.append(toggle, more);
+  actions.append(dragHandle(`Arrastar ${charge.description}`), toggle, more);
   row.append(name, amount, meta, actions);
+  const kind = `charge-${card.id}-${charge.paid_at ? "paid" : "open"}`;
+  row.dataset.drag = kind;
+  row.dataset.id = String(charge.id);
+  bindBlockDrag(row, kind, async (beforeId) => {
+    const paid = Boolean(charge.paid_at);
+    const ordered = (card.charges || [])
+      .filter((item) => Boolean(item.paid_at) === paid)
+      .sort((a, b) => txRank(b) - txRank(a) || String(b.spent_at).localeCompare(String(a.spent_at)));
+    if (!placeLocal(ordered, charge.id, beforeId, false)) return;
+    renderCardsView();
+    try {
+      await api("POST", `/cards/${card.id}/charges/${charge.id}/place`, { before_id: beforeId });
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
   return row;
 }
 
@@ -4607,6 +4949,8 @@ function renderCardsView() {
   document.getElementById("invoice-list")?.replaceChildren(...invoiceRows);
   const invoiceEmpty = document.getElementById("invoice-empty");
   if (invoiceEmpty) invoiceEmpty.hidden = invoiceRows.length > 0;
+  open.sort((a, b) => txRank(b) - txRank(a) || String(b.spent_at).localeCompare(String(a.spent_at)));
+  paid.sort((a, b) => txRank(b) - txRank(a) || String(b.paid_at).localeCompare(String(a.paid_at)));
   document.getElementById("charge-open")?.replaceChildren(...open.map((item) => chargeRow(card, item)));
   document.getElementById("charge-paid")?.replaceChildren(...paid.map((item) => chargeRow(card, item)));
   const openEmpty = document.getElementById("charge-open-empty");
@@ -4630,32 +4974,41 @@ async function loadCards() {
 }
 
 async function setChargePaid(card, charge, paid) {
+  const previous = charge.paid_at;
+  charge.paid_at = paid ? previous || new Date().toISOString() : null;
+  bumpInvoiceLocal(card, paid ? -Number(charge.amount) : Number(charge.amount));
+  renderDebts();
+  toast(paid ? "Pago e a fatura diminuiu" : "Voltou para a fatura");
   try {
-    await api("PUT", `/cards/${card.id}/charges/${charge.id}`, {
+    const result = await api("PUT", `/cards/${card.id}/charges/${charge.id}`, {
       description: charge.description,
       amount: Number(charge.amount),
       spent_at: String(charge.spent_at).slice(0, 10),
       paid,
     });
-    const changed = await applyChargeToInvoices(card, charge.amount, paid);
-    await loadCards();
-    if (changed) await loadDebts();
-    toast(paid ? (changed ? "Pago e a fatura diminuiu" : "Marcado como pago") : "Voltou para a fatura");
+    await syncWallet(result);
   } catch (err) {
+    charge.paid_at = previous;
     toast(err.message, "error");
+    await reloadWallet();
   }
 }
 
 async function removeCharge(card, charge) {
+  const unpaid = !charge.paid_at;
+  const list = card.charges || [];
+  const index = list.indexOf(charge);
+  if (index >= 0) list.splice(index, 1);
+  if (unpaid) bumpInvoiceLocal(card, -Number(charge.amount));
+  renderDebts();
+  toast(`"${charge.description}" excluído`);
   try {
-    const unpaid = !charge.paid_at;
-    await api("DELETE", `/cards/${card.id}/charges/${charge.id}`);
-    if (unpaid) await applyChargeToInvoices(card, charge.amount, true);
-    await loadCards();
-    if (unpaid) await loadDebts();
-    toast(`"${charge.description}" excluído`);
+    const result = await api("DELETE", `/cards/${card.id}/charges/${charge.id}`);
+    await syncWallet(result);
   } catch (err) {
+    if (index >= 0) list.splice(index, 0, charge);
     toast(err.message, "error");
+    await reloadWallet();
   }
 }
 
@@ -4741,33 +5094,46 @@ function bindCards() {
       const current = editingCharge;
       if (current) {
         const wasUnpaid = !current.paid_at;
-        if (wasUnpaid) await applyChargeToInvoices(card, current.amount, true);
-        await api("PUT", `/cards/${card.id}/charges/${current.id}`, {
-          description,
-          amount,
-          spent_at: spentAt,
-          paid: alreadyPaid,
-        });
-        const added = alreadyPaid ? false : await applyChargeToInvoices(card, amount, false);
+        const prev = { ...current };
+        if (wasUnpaid) bumpInvoiceLocal(card, -Number(current.amount));
+        Object.assign(current, { description, amount, spent_at: spentAt, paid_at: alreadyPaid ? current.paid_at || new Date().toISOString() : null });
+        if (!alreadyPaid) bumpInvoiceLocal(card, amount);
         resetChargeForm();
-        await loadCards();
-        if (wasUnpaid || added) await loadDebts();
+        renderDebts();
         toast("Lançamento atualizado");
-      } else {
-        await api("POST", `/cards/${card.id}/charges`, {
+        const result = await api("PUT", `/cards/${card.id}/charges/${prev.id}`, {
           description,
           amount,
           spent_at: spentAt,
           paid: alreadyPaid,
         });
-        const changed = await applyChargeToInvoices(card, amount, alreadyPaid);
+        await syncWallet(result);
+      } else {
+        const temp = {
+          id: `tmp-${Date.now()}`,
+          card_id: card.id,
+          description,
+          amount,
+          spent_at: spentAt,
+          paid_at: alreadyPaid ? new Date().toISOString() : null,
+        };
+        card.charges = card.charges || [];
+        card.charges.unshift(temp);
+        if (!alreadyPaid) bumpInvoiceLocal(card, amount);
         resetChargeForm();
-        await loadCards();
-        if (changed) await loadDebts();
-        toast(alreadyPaid ? "Lançado como pago" : changed ? "Lançado e a fatura aumentou" : "Lançado no extrato");
+        renderDebts();
+        toast(alreadyPaid ? "Lançado como pago" : "Lançado e a fatura aumentou");
+        const result = await api("POST", `/cards/${card.id}/charges`, {
+          description,
+          amount,
+          spent_at: spentAt,
+          paid: alreadyPaid,
+        });
+        await syncWallet(result);
       }
     } catch (err) {
       toast(err.message, "error");
+      await reloadWallet();
     }
   });
   document.getElementById("card-edit")?.addEventListener("click", () => {

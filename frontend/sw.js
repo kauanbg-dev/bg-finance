@@ -1,4 +1,4 @@
-const CACHE = 'bg-finance-v39';
+const CACHE = 'bg-finance-v46';
 const SHELL = [
   '/',
   '/index.html',

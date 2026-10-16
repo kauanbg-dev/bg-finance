@@ -222,7 +222,7 @@ async function recentLines(userId) {
     `SELECT description, amount, type, TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'DD/MM') AS day
      FROM transactions
      WHERE user_id = $1
-     ORDER BY date DESC, id DESC
+     ORDER BY date DESC, position DESC, id DESC
      LIMIT 5`,
     [userId]
   );
@@ -243,11 +243,15 @@ async function addTransaction(userId, type, rest) {
   }
   const name = categoryName(`${description} ${match[1]}`, type);
   const id = await categoryId(userId, type, name);
-  await db.query(
+  const created = await db.query(
     `INSERT INTO transactions (description, amount, type, user_id, category_id, date)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
     [description, amount, type, userId, id, `${todaySaoPaulo()}T12:00:00-03:00`]
   );
+  if (created.rows[0]) {
+    await db.query('UPDATE transactions SET position = $1 WHERE id = $1 AND position = 0', [created.rows[0].id]);
+  }
   const label = type === 'income' ? 'Receita' : 'Despesa';
   return `${label} lançada: ${money(amount)} em ${escapeHtml(description)}.`;
 }
