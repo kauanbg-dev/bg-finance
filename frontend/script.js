@@ -1667,7 +1667,11 @@ function renderDays(sorted, month) {
     ordered.forEach((t, index) => {
       const classes = [];
       if (index === 0) classes.push("day-start");
+      if (index === ordered.length - 1) classes.push("day-end");
       appendTxRow(t, true, classes, index === 0 ? ordered.length : -1, sorted);
+    });
+    appendSpanRow("day-gap-row", (cell) => {
+      cell.setAttribute("aria-hidden", "true");
     });
     shown += items.length;
   }
