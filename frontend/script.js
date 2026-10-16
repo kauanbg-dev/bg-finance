@@ -1341,16 +1341,9 @@ function placeLocal(list, id, beforeId, copyDate, dateKey = "date") {
   list.splice(to, 0, moved);
   const neighbor = list[to + 1] || list[to - 1];
   if (copyDate && neighbor) moved[dateKey] = neighbor[dateKey];
-  const before = list[to + 1];
-  const after = list[to - 1];
-  const b = before ? txRank(before) : null;
-  const a = after ? txRank(after) : null;
-  let next = moved.position;
-  if (b != null && a != null) next = Math.round((a + b) / 2);
-  else if (b != null) next = b + 1;
-  else if (a != null) next = a - 1;
-  if (b != null && next === b) next = b + 1;
-  moved.position = next;
+  list.forEach((item, index) => {
+    item.position = (list.length - index) * 1000;
+  });
   return true;
 }
 
@@ -1364,101 +1357,156 @@ function dragHandle(label) {
   return btn;
 }
 
-function bindBlockDrag(el, kind, onDrop) {
-  let press = 0;
-  let pointerId = null;
-  let startX = 0;
-  let startY = 0;
-  let dragging = false;
-  let didMove = false;
-  let ghost = null;
+let dropLineEl = null;
 
-  function clearMarks() {
-    document.querySelectorAll(".drop-before").forEach((node) => node.classList.remove("drop-before"));
+function visibleDragNodes(kind, skip) {
+  return [...document.querySelectorAll(`[data-drag="${kind}"]`)]
+    .filter((node) => node !== skip && node.getClientRects().length > 0)
+    .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+}
+
+function dropLine() {
+  if (!dropLineEl) {
+    dropLineEl = document.createElement("div");
+    dropLineEl.className = "drop-line";
+    document.body.appendChild(dropLineEl);
   }
+  return dropLineEl;
+}
 
-  function beforeIdAt(y) {
-    const nodes = [...document.querySelectorAll(`[data-drag="${kind}"]`)].filter((node) => node.offsetParent && node !== el);
-    for (const node of nodes) {
-      const box = node.getBoundingClientRect();
-      if (y < box.top + box.height / 2) return node.dataset.id;
-    }
+function hideDropLine() {
+  dropLineEl?.classList.remove("is-on");
+}
+
+function beforeIdAt(kind, skip, y) {
+  const nodes = visibleDragNodes(kind, skip);
+  const line = dropLine();
+  if (!nodes.length) {
+    hideDropLine();
     return null;
   }
-
-  function lift(event) {
-    dragging = true;
-    didMove = false;
-    el.classList.add("is-dragging");
-    try {
-      el.setPointerCapture(event.pointerId);
-    } catch (_) {
-      /* ignore */
+  let beforeEl = null;
+  for (const node of nodes) {
+    const box = node.getBoundingClientRect();
+    if (y < box.top + box.height / 2) {
+      beforeEl = node;
+      break;
     }
-    ghost = el.cloneNode(true);
-    ghost.classList.add("drag-ghost");
-    ghost.style.width = `${el.getBoundingClientRect().width}px`;
-    document.body.appendChild(ghost);
-    ghost.style.left = `${event.clientX - 24}px`;
-    ghost.style.top = `${event.clientY - 16}px`;
   }
+  const anchor = beforeEl || nodes[nodes.length - 1];
+  const box = anchor.getBoundingClientRect();
+  const inset = Math.min(16, Math.max(8, box.width * 0.04));
+  line.style.top = `${(beforeEl ? box.top : box.bottom) - 1}px`;
+  line.style.left = `${box.left + inset}px`;
+  line.style.width = `${Math.max(box.width - inset * 2, 40)}px`;
+  line.classList.add("is-on");
+  return beforeEl ? beforeEl.dataset.id : null;
+}
 
-  function stop() {
-    clearTimeout(press);
-    press = 0;
-    pointerId = null;
-    dragging = false;
-    el.classList.remove("is-dragging");
-    ghost?.remove();
-    ghost = null;
-    clearMarks();
+const blockDrag = {
+  press: 0,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  lastY: 0,
+  dragging: false,
+  didMove: false,
+  ghost: null,
+  el: null,
+  kind: "",
+  onDrop: null,
+};
+
+function stopBlockDrag() {
+  clearTimeout(blockDrag.press);
+  blockDrag.press = 0;
+  blockDrag.pointerId = null;
+  blockDrag.dragging = false;
+  blockDrag.el?.classList.remove("is-dragging");
+  document.body.classList.remove("is-block-dragging");
+  blockDrag.ghost?.remove();
+  blockDrag.ghost = null;
+  blockDrag.el = null;
+  blockDrag.onDrop = null;
+  hideDropLine();
+}
+
+function liftBlockDrag(event) {
+  const el = blockDrag.el;
+  if (!el) return;
+  blockDrag.dragging = true;
+  blockDrag.didMove = false;
+  blockDrag.lastY = event.clientY;
+  el.classList.add("is-dragging");
+  document.body.classList.add("is-block-dragging");
+  try {
+    el.setPointerCapture(event.pointerId);
+  } catch (_) {
+    /* ignore */
   }
+  const ghost = el.cloneNode(true);
+  ghost.classList.add("drag-ghost");
+  ghost.style.width = `${el.getBoundingClientRect().width}px`;
+  document.body.appendChild(ghost);
+  ghost.style.left = `${event.clientX - 28}px`;
+  ghost.style.top = `${event.clientY - 20}px`;
+  blockDrag.ghost = ghost;
+  beforeIdAt(blockDrag.kind, el, event.clientY);
+}
 
+document.addEventListener("pointermove", (event) => {
+  if (event.pointerId !== blockDrag.pointerId) return;
+  blockDrag.lastY = event.clientY;
+  if (!blockDrag.dragging) {
+    if (Math.abs(event.clientX - blockDrag.startX) > 8 || Math.abs(event.clientY - blockDrag.startY) > 8) {
+      clearTimeout(blockDrag.press);
+      blockDrag.press = 0;
+    }
+    return;
+  }
+  event.preventDefault();
+  if (Math.abs(event.clientX - blockDrag.startX) > 6 || Math.abs(event.clientY - blockDrag.startY) > 6) blockDrag.didMove = true;
+  if (blockDrag.ghost) {
+    blockDrag.ghost.style.left = `${event.clientX - 28}px`;
+    blockDrag.ghost.style.top = `${event.clientY - 20}px`;
+  }
+  if (event.clientY < 72) window.scrollBy(0, -18);
+  else if (event.clientY > window.innerHeight - 88) window.scrollBy(0, 18);
+  beforeIdAt(blockDrag.kind, blockDrag.el, event.clientY);
+}, { passive: false });
+
+document.addEventListener("pointerup", (event) => {
+  if (blockDrag.pointerId == null || event.pointerId !== blockDrag.pointerId) return;
+  const dropped = blockDrag.dragging && blockDrag.didMove;
+  const el = blockDrag.el;
+  const onDrop = blockDrag.onDrop;
+  const kind = blockDrag.kind;
+  const y = event.clientY || blockDrag.lastY;
+  const nextId = dropped ? beforeIdAt(kind, el, y) : null;
+  stopBlockDrag();
+  if (!dropped || !onDrop) return;
+  if (el) el.dataset.dragged = "1";
+  onDrop(nextId);
+});
+document.addEventListener("pointercancel", (event) => {
+  if (event.pointerId === blockDrag.pointerId) stopBlockDrag();
+});
+
+function bindBlockDrag(el, kind, onDrop) {
   el.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if (event.target.closest("a, input, select, textarea, summary, .pay-btn, .action-btn, .btn, .charge-more, .piggy-open")) return;
-    startX = event.clientX;
-    startY = event.clientY;
-    pointerId = event.pointerId;
-    didMove = false;
-    if (event.target.closest(".drag-handle")) lift(event);
-    else press = window.setTimeout(() => lift(event), 160);
+    blockDrag.el = el;
+    blockDrag.kind = kind;
+    blockDrag.onDrop = onDrop;
+    blockDrag.startX = event.clientX;
+    blockDrag.startY = event.clientY;
+    blockDrag.lastY = event.clientY;
+    blockDrag.pointerId = event.pointerId;
+    blockDrag.didMove = false;
+    if (event.target.closest(".drag-handle")) liftBlockDrag(event);
+    else blockDrag.press = window.setTimeout(() => liftBlockDrag(event), 180);
   });
-
-  el.addEventListener("pointermove", (event) => {
-    if (event.pointerId !== pointerId) return;
-    if (!dragging) {
-      if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) {
-        clearTimeout(press);
-        press = 0;
-      }
-      return;
-    }
-    event.preventDefault();
-    didMove = true;
-    if (ghost) {
-      ghost.style.left = `${event.clientX - 24}px`;
-      ghost.style.top = `${event.clientY - 16}px`;
-    }
-    clearMarks();
-    const nextId = beforeIdAt(event.clientY);
-    const mark = nextId
-      ? document.querySelector(`[data-drag="${kind}"][data-id="${nextId}"]`)
-      : [...document.querySelectorAll(`[data-drag="${kind}"]`)].filter((node) => node.offsetParent && node !== el).at(-1);
-    mark?.classList.add("drop-before");
-  }, { passive: false });
-
-  const end = (event) => {
-    if (pointerId != null && event.pointerId !== pointerId) return;
-    const dropped = dragging && didMove;
-    const y = event.clientY;
-    stop();
-    if (!dropped) return;
-    el.dataset.dragged = "1";
-    onDrop(beforeIdAt(y));
-  };
-  el.addEventListener("pointerup", end);
-  el.addEventListener("pointercancel", end);
   el.addEventListener("click", (event) => {
     if (el.dataset.dragged === "1") {
       event.preventDefault();
@@ -1573,10 +1621,10 @@ function appendDayCard(iso, ordered, sortedList) {
       const line = document.createElement("div");
       line.className = "day-line";
       if (index > 0) line.classList.add("has-edge");
-      line.dataset.drag = "tx";
+      line.dataset.drag = "tx-card";
       line.dataset.id = String(t.id);
       line.appendChild(dragHandle(`Arrastar ${t.description}`));
-      bindBlockDrag(line, "tx", (beforeId) => placeTransaction(t, beforeId));
+      bindBlockDrag(line, "tx-card", (beforeId) => placeTransaction(t, beforeId));
       const row = document.createElement("button");
       row.type = "button";
       row.className = "day-item";
@@ -1632,7 +1680,7 @@ function renderFlat(sorted) {
 }
 
 async function placeTransaction(t, beforeId) {
-  if (!placeLocal(sortTxList(filteredRows()), t.id, beforeId, true, "date")) return;
+  if (!placeLocal(sortTxList(allTransactions), t.id, beforeId, true, "date")) return;
   renderDashboard();
   try {
     await api("POST", `/transactions/${t.id}/place`, { before_id: beforeId });
@@ -1739,9 +1787,9 @@ function appendTxRow(t, inDay, classes = [], dateSpan = 0, dayGroup = []) {
       if (!window.matchMedia("(max-width: 719px)").matches) return;
       openEditModal(t);
     });
-    tr.dataset.drag = "tx";
+    tr.dataset.drag = "tx-row";
     tr.dataset.id = String(t.id);
-    bindBlockDrag(tr, "tx", (beforeId) => placeTransaction(t, beforeId));
+    bindBlockDrag(tr, "tx-row", (beforeId) => placeTransaction(t, beforeId));
     tbody.appendChild(tr);
 }
 
@@ -3025,24 +3073,7 @@ function debtCard(debt, bucket) {
     actions.append(pay, debtAction(ICON.edit, "Editar", () => startEditDebt(debt)));
   }
   actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeDebt(debt), "delete"));
-  actions.prepend(dragHandle(`Arrastar ${debt.name}`));
   article.append(top, actions);
-  const dragKind = `debt-${bucket}-${String(debtDay(debt) || "").slice(0, 7)}`;
-  article.dataset.drag = dragKind;
-  article.dataset.id = String(debt.id);
-  bindBlockDrag(article, dragKind, async (beforeId) => {
-    const month = String(debtDay(debt) || "").slice(0, 7);
-    const ordered = debts
-      .filter((item) => Boolean(item.paid_at) === (bucket === "paid") && String(debtDay(item) || "").slice(0, 7) === month)
-      .sort((a, b) => txRank(b) - txRank(a) || String(debtDay(a)).localeCompare(String(debtDay(b))));
-    if (!placeLocal(ordered, debt.id, beforeId, false)) return;
-    renderDebts();
-    try {
-      await api("POST", `/debts/${debt.id}/place`, { before_id: beforeId });
-    } catch (err) {
-      toast(err.message, "error");
-    }
-  });
   return article;
 }
 
@@ -3636,23 +3667,7 @@ function subCard(sub, bucket) {
     actions.append(pay, debtAction(ICON.edit, "Editar", () => startEditSub(sub)));
   }
   actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeSub(sub), "delete"));
-  actions.prepend(dragHandle(`Arrastar ${sub.name}`));
   article.append(top, actions);
-  const dragKind = `sub-${bucket}`;
-  article.dataset.drag = dragKind;
-  article.dataset.id = String(sub.id);
-  bindBlockDrag(article, dragKind, async (beforeId) => {
-    const ordered = subscriptions
-      .filter((item) => subBucket(item) === bucket)
-      .sort((a, b) => txRank(b) - txRank(a) || subDay(a).localeCompare(subDay(b)));
-    if (!placeLocal(ordered, sub.id, beforeId, false)) return;
-    renderSubscriptions();
-    try {
-      await api("POST", `/subscriptions/${sub.id}/place`, { before_id: beforeId });
-    } catch (err) {
-      toast(err.message, "error");
-    }
-  });
   return article;
 }
 
@@ -4264,26 +4279,10 @@ function saveRow(item) {
     actions.appendChild(toggle);
   }
   actions.append(
-    dragHandle(`Arrastar ${item.name}`),
     debtAction(ICON.edit, "Editar", () => startEditSave(item)),
     debtAction(ICON.trash, "Excluir", () => removeSave(item), "delete")
   );
   row.append(main, amount, actions);
-  const kind = `save-${item.kind}-${item.category}`;
-  row.dataset.drag = kind;
-  row.dataset.id = String(item.id);
-  bindBlockDrag(row, kind, async (beforeId) => {
-    const ordered = savings
-      .filter((entry) => entry.kind === item.kind && entry.category === item.category)
-      .sort((a, b) => txRank(b) - txRank(a) || String(a.name).localeCompare(String(b.name)));
-    if (!placeLocal(ordered, item.id, beforeId, false)) return;
-    renderSavings();
-    try {
-      await api("POST", `/savings/${item.id}/place`, { before_id: beforeId });
-    } catch (err) {
-      toast(err.message, "error");
-    }
-  });
   if (open) row.appendChild(piggyLog(item));
   return row;
 }
@@ -4834,24 +4833,8 @@ function chargeRow(card, charge) {
   });
   menu.append(edit, remove);
   more.append(summary, menu);
-  actions.append(dragHandle(`Arrastar ${charge.description}`), toggle, more);
+  actions.append(toggle, more);
   row.append(name, amount, meta, actions);
-  const kind = `charge-${card.id}-${charge.paid_at ? "paid" : "open"}`;
-  row.dataset.drag = kind;
-  row.dataset.id = String(charge.id);
-  bindBlockDrag(row, kind, async (beforeId) => {
-    const paid = Boolean(charge.paid_at);
-    const ordered = (card.charges || [])
-      .filter((item) => Boolean(item.paid_at) === paid)
-      .sort((a, b) => txRank(b) - txRank(a) || String(b.spent_at).localeCompare(String(a.spent_at)));
-    if (!placeLocal(ordered, charge.id, beforeId, false)) return;
-    renderCardsView();
-    try {
-      await api("POST", `/cards/${card.id}/charges/${charge.id}/place`, { before_id: beforeId });
-    } catch (err) {
-      toast(err.message, "error");
-    }
-  });
   return row;
 }
 

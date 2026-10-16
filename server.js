@@ -108,24 +108,20 @@ async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, e
   if (to === from) return { placed: false };
   list.splice(to, 0, moved);
   const neighbor = list[to + 1] || list[to - 1] || moved;
-  const before = list[to + 1];
-  const after = list[to - 1];
-  const rank = (row) => Number(row.rank) || Number(row.id);
-  let nextPos;
-  if (before && after) nextPos = Math.round((rank(before) + rank(after)) / 2);
-  else if (before) nextPos = rank(before) + 1;
-  else if (after) nextPos = rank(after) - 1;
-  else nextPos = rank(moved);
-  if (before && nextPos === rank(before)) nextPos = rank(before) + 1;
   if (copyDate && dateCol) {
     await db.query(
-      `UPDATE ${table} SET ${dateCol} = $1, position = $2 WHERE id = $3 AND user_id = $4`,
-      [neighbor.slot_date, nextPos, id, userId]
+      `UPDATE ${table} SET ${dateCol} = $1 WHERE id = $2 AND user_id = $3`,
+      [neighbor.slot_date, id, userId]
     );
-  } else {
+  }
+  if (list.length) {
+    const tuples = list.map((row, index) => `(${Number(row.id)}::int, ${(list.length - index) * 1000}::int)`).join(', ');
     await db.query(
-      `UPDATE ${table} SET position = $1 WHERE id = $2 AND user_id = $3`,
-      [nextPos, id, userId]
+      `UPDATE ${table} AS t
+       SET position = v.position
+       FROM (VALUES ${tuples}) AS v(id, position)
+       WHERE t.id = v.id AND t.user_id = $1`,
+      [userId]
     );
   }
   return { placed: true };
