@@ -5272,10 +5272,18 @@ function bindCards() {
   });
 }
 
+const bootStarted = Date.now();
+let bootDone = false;
 function revealApp() {
-  document.documentElement.classList.remove("booting");
-  const screen = document.getElementById("boot-screen");
-  if (screen) screen.setAttribute("aria-busy", "false");
+  if (bootDone) return;
+  bootDone = true;
+  const wait = Math.max(0, 800 - (Date.now() - bootStarted));
+  setTimeout(() => {
+    document.documentElement.classList.remove("booting");
+    document.documentElement.classList.add("ready");
+    const screen = document.getElementById("boot-screen");
+    if (screen) screen.setAttribute("aria-busy", "false");
+  }, wait);
 }
 setTimeout(revealApp, 12000);
 
