@@ -1,4 +1,4 @@
-const CACHE = 'bg-finance-v70';
+const CACHE = 'bg-finance-v71';
 const SHELL = [
   '/login.html',
   '/logo.png',
@@ -44,9 +44,12 @@ self.addEventListener('fetch', (event) => {
   if (!asset) return;
 
   event.respondWith(
-    fetch(request).then((response) => {
-      if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
-      return response;
-    }).catch(() => caches.match(request))
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+      return fetch(request).then((response) => {
+        if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
+        return response;
+      });
+    })
   );
 });
