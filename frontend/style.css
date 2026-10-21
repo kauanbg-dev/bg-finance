@@ -1498,6 +1498,13 @@ body.modal-lock{ overflow: hidden; }
   font-size: 18px;
   letter-spacing: -.02em;
 }
+#sheet-body .entry-form{ margin: 0; }
+#sheet-body .debt-form-actions{
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+#sheet-body .debt-form-actions .btn{ flex: 1; min-height: 48px; }
 
 /* BASE: CELULAR */
 #tx-table thead{ display: none; }

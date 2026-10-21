@@ -1,7 +1,5 @@
-const CACHE = 'bg-finance-v61';
+const CACHE = 'bg-finance-v63';
 const SHELL = [
-  '/',
-  '/index.html',
   '/login.html',
   '/style.css',
   '/script.js',
@@ -32,15 +30,19 @@ self.addEventListener('fetch', (event) => {
   const asset = url.pathname === '/' || /\.(html|js|css|png|webp|webmanifest|svg|ico)$/i.test(url.pathname);
   if (!asset) return;
 
-  const isPage = url.pathname === '/' || url.pathname.endsWith('.html') || url.pathname.endsWith('sw.js');
+  const isApp = url.pathname === '/' || url.pathname.endsWith('/index.html');
+  const isPage = isApp || url.pathname.endsWith('.html') || url.pathname.endsWith('sw.js');
   if (isPage) {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-store' })
         .then((response) => {
-          if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
+          if (response.ok && !isApp) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
           return response;
         })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html')))
+        .catch(() => {
+          if (isApp) return caches.match('/login.html');
+          return caches.match(request).then((cached) => cached || caches.match('/login.html'));
+        })
     );
     return;
   }

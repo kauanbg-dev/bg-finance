@@ -48,7 +48,7 @@ app.use(express.static(path.join(__dirname, 'frontend'), {
   lastModified: true,
   setHeaders(res, filePath) {
     if (/\.(html)$/i.test(filePath) || /[\\/]sw\.js$/i.test(filePath)) {
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cache-Control', 'no-store');
       return;
     }
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable');

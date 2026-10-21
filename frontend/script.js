@@ -216,14 +216,28 @@ let chartsNeedDraw = true;
 let loading = true;
 let categoryTouched = false;
 
+function wipeLocalAccount() {
+  localStorage.removeItem("token");
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("bg-avatar:")) keys.push(key);
+    }
+    keys.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    /* login nao depende desse cache */
+  }
+}
+
 async function leaveSession() {
   try {
     await fetch("/auth/logout", { method: "POST", credentials: "include", cache: "no-store" });
   } catch {
     /* segue para o login mesmo se o servidor nao responder */
   }
-  localStorage.removeItem("token");
-  window.location.href = "login.html";
+  wipeLocalAccount();
+  window.location.replace("login.html");
 }
 
 logoutBtn?.addEventListener("click", () => {
@@ -249,10 +263,11 @@ function friendlyError(err, fallback = "Não foi possível completar a ação. T
 }
 
 function toast(message, kind = "success", action) {
+  if (!message || message.silent || message === "Sessão expirada") return;
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   const text = document.createElement("span");
-  text.textContent = kind === "error" ? friendlyError(message) : message;
+  text.textContent = kind === "error" ? friendlyError(message?.message ?? message) : message;
   el.appendChild(text);
   let timer;
   const dismiss = () => {
@@ -347,8 +362,8 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
 
 function handleAuth(response) {
   if (response.status === 401 || response.status === 403) {
-    localStorage.removeItem("token");
-    window.location.href = "login.html";
+    wipeLocalAccount();
+    window.location.replace("login.html");
     return true;
   }
   return false;
@@ -839,7 +854,11 @@ async function api(method, url, body) {
     credentials: "include",
     cache: "no-store",
   });
-  if (handleAuth(response)) throw new Error("Sessão expirada");
+  if (handleAuth(response)) {
+    const err = new Error("Sessão expirada");
+    err.silent = true;
+    throw err;
+  }
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.error || "Não foi possível completar a ação");
   return data;
@@ -921,12 +940,14 @@ function rememberAvatar(dataUrl) {
   }
 }
 
-setAccount({
-  email: previewMode ? "demo@bgfinance.app" : "",
-  name: previewMode ? "Conta demo" : "",
-  created_at: previewMode ? previewProfile.created_at : "",
-  avatar: cachedAvatar(),
-});
+if (previewMode) {
+  setAccount({
+    email: "demo@bgfinance.app",
+    name: "Conta demo",
+    created_at: previewProfile.created_at,
+    avatar: cachedAvatar(),
+  });
+}
 
 function openAccount(open) {
   if (!accountMenu || !accountBtn) return;
@@ -962,10 +983,8 @@ document.getElementById("delete-account")?.addEventListener("click", async () =>
   if (!password) return;
   try {
     await api("DELETE", "/me", { password });
-    localStorage.removeItem("token");
     localStorage.removeItem(SETTINGS_KEY);
     localStorage.removeItem(CATEGORY_KEY);
-    localStorage.removeItem(avatarKey);
     await leaveSession();
   } catch (err) {
     toast(err.message, "error");
@@ -2385,9 +2404,8 @@ async function loadCategories() {
 async function loadTransactions() {
   try {
     allTransactions = await api("GET", "/transactions");
-  } catch (err) {
+  } catch {
     allTransactions = [];
-    toast(err.message, "error");
   }
   loading = false;
   refreshCategoryFilter();
@@ -2779,48 +2797,59 @@ document.addEventListener("keydown", (e) => {
 });
 
 const txModal = document.getElementById("tx-modal");
+const sheetBody = document.getElementById("sheet-body");
+const sheetTitle = document.getElementById("tx-modal-title");
+
+function sheetTitleFor(form) {
+  const id = form?.id;
+  if (id === "transaction-form") return "Novo lançamento";
+  if (id === "debt-form") return editingDebtId ? "Editar dívida" : "Nova dívida";
+  if (id === "card-form") return editingCardId ? "Editar cartão" : "Novo cartão";
+  if (id === "charge-form") return editingCharge ? "Editar extrato" : "Lançar no extrato";
+  if (id === "sub-form") return editingSubId ? "Editar assinatura" : "Nova assinatura";
+  if (id === "save-form") return editingSaveId ? "Editar" : "Adicionar";
+  return "Adicionar";
+}
+
+function parkForm(form) {
+  if (!form) return;
+  form.classList.add("hidden");
+  if (form.id === "transaction-form") return;
+  const home = document.querySelector(`[data-form-home="${form.id}"]`);
+  if (home) home.after(form);
+}
 
 function openTxModal(focus) {
-  if (!txModal) return;
-  if (dateInput && !dateInput.value) dateInput.value = today();
-  txModal.classList.remove("hidden");
-  document.body.classList.add("modal-lock");
-  const field = focus || form?.querySelector("input:not([type='hidden']):not(:disabled)");
-  requestAnimationFrame(() => field?.focus({ preventScroll: true }));
+  openEntryForm(form, focus);
 }
 
 function closeTxModal() {
+  closeEntryForm(form);
+}
+
+function openEntryForm(target, focus) {
+  if (!target || !txModal) return;
+  if (target.id === "transaction-form" && dateInput && !dateInput.value) dateInput.value = today();
+  sheetBody?.querySelectorAll("form.entry-form").forEach((el) => {
+    if (el !== target) parkForm(el);
+  });
+  if (target.parentElement !== sheetBody) sheetBody?.appendChild(target);
+  target.classList.remove("hidden");
+  if (sheetTitle) sheetTitle.textContent = sheetTitleFor(target);
+  txModal.classList.remove("hidden");
+  document.body.classList.add("modal-lock");
+  const field = focus || target.querySelector("input:not([type='hidden']):not(:disabled)");
+  requestAnimationFrame(() => field?.focus({ preventScroll: true }));
+}
+
+function closeEntryForm(target) {
+  parkForm(target);
+  const stillOpen = sheetBody?.querySelector("form.entry-form:not(.hidden)");
+  if (stillOpen) return;
   txModal?.classList.add("hidden");
   if (editModal?.classList.contains("hidden") && dialog?.classList.contains("hidden")) {
     document.body.classList.remove("modal-lock");
   }
-}
-
-function openEntryForm(target, focus) {
-  if (!target) return;
-  if (target.id === "transaction-form") {
-    openTxModal(focus);
-    return;
-  }
-  target.classList.remove("hidden");
-  const launch = document.querySelector(`[data-open-form="${target.id}"]`);
-  if (launch) launch.hidden = true;
-  const field = focus || target.querySelector("input:not([type='hidden']):not(:disabled)");
-  requestAnimationFrame(() => {
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-    field?.focus({ preventScroll: true });
-  });
-}
-
-function closeEntryForm(target) {
-  if (!target) return;
-  if (target.id === "transaction-form") {
-    closeTxModal();
-    return;
-  }
-  target.classList.add("hidden");
-  const launch = document.querySelector(`[data-open-form="${target.id}"]`);
-  if (launch) launch.hidden = false;
 }
 
 function resetTransactionForm() {
@@ -2832,18 +2861,23 @@ function resetTransactionForm() {
   closeTxModal();
 }
 
-function closeOpenEntryForm() {
-  if (txModal && !txModal.classList.contains("hidden")) {
-    resetTransactionForm();
+function dismissSheet() {
+  const openForm = sheetBody?.querySelector("form.entry-form:not(.hidden)");
+  if (!openForm) {
+    closeEntryForm(form);
     return;
   }
-  const openForm = document.querySelector(".app-view:not([hidden]) form.entry-form:not(.hidden)");
-  if (!openForm) return;
-  if (openForm.id === "debt-form") resetDebtForm();
+  if (openForm.id === "transaction-form") resetTransactionForm();
+  else if (openForm.id === "debt-form") resetDebtForm();
   else if (openForm.id === "sub-form") resetSubForm();
   else if (openForm.id === "save-form") resetSaveForm();
-  else if (openForm.id === "card-form") closeEntryForm(openForm);
-  else if (openForm.id === "charge-form") closeEntryForm(openForm);
+  else if (openForm.id === "card-form") resetCardForm();
+  else if (openForm.id === "charge-form") resetChargeForm();
+  else closeEntryForm(openForm);
+}
+
+function closeOpenEntryForm() {
+  if (txModal && !txModal.classList.contains("hidden")) dismissSheet();
 }
 
 function bindEntryForms() {
@@ -2851,8 +2885,8 @@ function bindEntryForms() {
     btn.addEventListener("click", () => openEntryForm(document.getElementById(btn.dataset.openForm)));
   });
   document.getElementById("tx-cancel")?.addEventListener("click", resetTransactionForm);
-  document.getElementById("tx-modal-close")?.addEventListener("click", resetTransactionForm);
-  txModal?.querySelector(".modal-backdrop")?.addEventListener("click", resetTransactionForm);
+  document.getElementById("tx-modal-close")?.addEventListener("click", dismissSheet);
+  txModal?.querySelector(".modal-backdrop")?.addEventListener("click", dismissSheet);
 }
 
 /* ---------- menu, dívidas e ajustes ---------- */
@@ -2971,8 +3005,8 @@ async function loadSettings() {
       chartPrefs = data.charts;
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({ charts: chartPrefs }));
     }
-  } catch (err) {
-    toast(err.message, "error");
+  } catch {
+    /* usa os ajustes que ja estavam no aparelho */
   }
   applyChartPrefs();
 }
@@ -3409,9 +3443,8 @@ function renderDebts() {
 async function loadDebts() {
   try {
     debts = await api("GET", "/debts");
-  } catch (err) {
+  } catch {
     debts = [];
-    toast(err.message, "error");
   }
   renderDebts();
 }
@@ -3815,9 +3848,8 @@ function renderSubscriptions() {
 async function loadSubscriptions() {
   try {
     subscriptions = await api("GET", "/subscriptions");
-  } catch (err) {
+  } catch {
     subscriptions = [];
-    toast(err.message, "error");
   }
   renderSubscriptions();
 }
@@ -4465,9 +4497,8 @@ function renderSavings() {
 async function loadSavings() {
   try {
     savings = await api("GET", "/savings");
-  } catch (err) {
+  } catch {
     savings = [];
-    toast(err.message, "error");
   }
   renderSavings();
 }
@@ -4646,7 +4677,6 @@ function startEditCard(card) {
   if (submit) submit.textContent = "Salvar alterações";
   const form = document.getElementById("card-form");
   openEntryForm(form, issuer);
-  form?.scrollIntoView({ block: "center" });
 }
 
 function resetChargeForm() {
@@ -5044,9 +5074,8 @@ function renderCardsView() {
 async function loadCards() {
   try {
     wallet = await api("GET", "/cards");
-  } catch (err) {
+  } catch {
     wallet = [];
-    toast(err.message, "error");
   }
   if (!wallet.some((card) => card.id === selectedCardId)) selectedCardId = wallet[0]?.id ?? null;
   fillImportCards();
@@ -5243,6 +5272,25 @@ function bindCards() {
   });
 }
 
+function revealApp() {
+  document.documentElement.classList.remove("booting");
+}
+
+window.addEventListener("pageshow", (event) => {
+  if (previewMode || !event.persisted) return;
+  document.documentElement.classList.add("booting");
+  api("GET", "/me")
+    .then((me) => {
+      userId = me?.id || "anon";
+      avatarKey = `bg-avatar:${userId}`;
+      setAccount(me || {});
+      revealApp();
+    })
+    .catch(() => {
+      window.location.replace("login.html");
+    });
+});
+
 (async function init() {
   if (!previewMode) {
     try {
@@ -5251,10 +5299,13 @@ function bindCards() {
       avatarKey = `bg-avatar:${userId}`;
       rememberAvatar(me?.avatar || "");
       setAccount(me || {});
+      revealApp();
     } catch {
-      window.location.href = "login.html";
+      window.location.replace("login.html");
       return;
     }
+  } else {
+    revealApp();
   }
   if (monthFilter && !monthFilter.value) monthFilter.value = today().slice(0, 7);
   enhanceControls();
