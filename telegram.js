@@ -3,7 +3,9 @@ const db = require('./database');
 
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
-const WEBHOOK_SECRET = crypto.createHmac('sha256', process.env.JWT_SECRET || 'bg-finance').update('telegram-webhook').digest('hex');
+const WEBHOOK_SECRET = process.env.JWT_SECRET
+  ? crypto.createHmac('sha256', process.env.JWT_SECRET).update('telegram-webhook').digest('hex')
+  : '';
 
 let botUsername = '';
 let ready = false;
@@ -30,7 +32,8 @@ async function api(method, body) {
 }
 
 function secretOk(header) {
-  const got = Buffer.from(String(header || ''));
+  if (!WEBHOOK_SECRET || !header) return false;
+  const got = Buffer.from(String(header));
   const expect = Buffer.from(WEBHOOK_SECRET);
   return got.length === expect.length && crypto.timingSafeEqual(got, expect);
 }

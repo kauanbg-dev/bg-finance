@@ -25,6 +25,7 @@ form.addEventListener("submit", async (e) => {
   try {
     await postJSON("/auth/reset", { token, password });
     localStorage.removeItem("token");
+    await fetch("/auth/logout", { method: "POST", credentials: "include", cache: "no-store" }).catch(() => {});
     window.location.href = "login.html?reset=1";
   } catch (err) {
     if (err.status === 400 && /expirado/i.test(err.message)) return showInvalid();

@@ -1472,6 +1472,32 @@ li button{
   margin-top: 6px;
 }
 .modal-actions .btn{ flex: 1; min-height: 48px; }
+body.modal-lock{ overflow: hidden; }
+.tx-form{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas: none;
+  gap: 12px;
+}
+.tx-form .field,
+.tx-form .entry-actions{
+  grid-area: auto;
+}
+.tx-form .f-desc,
+.tx-form .f-cat,
+.tx-form .f-type,
+.tx-form .entry-actions{
+  grid-column: 1 / -1;
+}
+.tx-form .entry-actions{
+  display: flex;
+  margin-top: 4px;
+}
+.tx-sheet h2{
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -.02em;
+}
 
 /* BASE: CELULAR */
 #tx-table thead{ display: none; }
@@ -1561,6 +1587,7 @@ li button{
     grid-template-columns: 1fr;
     grid-template-areas: "desc" "amount" "date" "cat" "type" "submit";
   }
+  .tx-form{ grid-template-columns: 1fr; }
 }
 
 /* TABLET */
