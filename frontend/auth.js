@@ -20,7 +20,19 @@ function friendlyError(err, fallback = "Não foi possível completar a ação. T
 }
 
 function setMsg(el, text, kind = "error") {
-  const shown = kind === "error" ? friendlyError(text) : text;
+  if (!el) return;
+  const raw = String(text ?? "").trim();
+  if (!raw) {
+    el.textContent = "";
+    el.className = "msg";
+    return;
+  }
+  const shown = kind === "error" ? friendlyError(raw) : raw;
+  if (kind === "error" && /completar a ação/i.test(shown)) {
+    el.textContent = "";
+    el.className = "msg";
+    return;
+  }
   el.textContent = shown;
   el.className = shown ? `msg msg-${kind}` : "msg";
 }
