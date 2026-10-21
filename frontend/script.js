@@ -5274,7 +5274,10 @@ function bindCards() {
 
 function revealApp() {
   document.documentElement.classList.remove("booting");
+  const screen = document.getElementById("boot-screen");
+  if (screen) screen.setAttribute("aria-busy", "false");
 }
+setTimeout(revealApp, 12000);
 
 window.addEventListener("pageshow", (event) => {
   if (previewMode || !event.persisted) return;
@@ -5299,13 +5302,10 @@ window.addEventListener("pageshow", (event) => {
       avatarKey = `bg-avatar:${userId}`;
       rememberAvatar(me?.avatar || "");
       setAccount(me || {});
-      revealApp();
     } catch {
       window.location.replace("login.html");
       return;
     }
-  } else {
-    revealApp();
   }
   if (monthFilter && !monthFilter.value) monthFilter.value = today().slice(0, 7);
   enhanceControls();
@@ -5326,6 +5326,7 @@ window.addEventListener("pageshow", (event) => {
   await loadCategories();
   await loadSettings();
   await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions(), loadSavings(), loadCards()]);
+  revealApp();
 })();
 
 /* ---------- controles customizados ---------- */

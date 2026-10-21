@@ -38,6 +38,7 @@ form.addEventListener("submit", async (e) => {
   try {
     await postJSON("/auth/login", { email, password });
     localStorage.removeItem("token");
+    document.documentElement.classList.add("booting");
     window.location.replace("index.html");
   } catch (err) {
     signingIn = false;
