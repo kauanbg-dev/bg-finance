@@ -5272,18 +5272,14 @@ function bindCards() {
   });
 }
 
-const bootStarted = Date.now();
 let bootDone = false;
 function revealApp() {
   if (bootDone) return;
   bootDone = true;
-  const wait = Math.max(0, 200 - (Date.now() - bootStarted));
-  setTimeout(() => {
-    document.documentElement.classList.remove("booting");
-    document.documentElement.classList.add("ready");
-    const screen = document.getElementById("boot-screen");
-    if (screen) screen.setAttribute("aria-busy", "false");
-  }, wait);
+  document.documentElement.classList.remove("booting");
+  document.documentElement.classList.add("ready");
+  const screen = document.getElementById("boot-screen");
+  if (screen) screen.setAttribute("aria-busy", "false");
 }
 setTimeout(revealApp, 12000);
 
@@ -5331,9 +5327,15 @@ window.addEventListener("pageshow", (event) => {
   if (start !== "home") showView(start, false);
   if (previewMode) allTransactions = demoTransactions();
   if (!document.getElementById("view-home")?.hidden) renderDashboard();
-  await loadCategories();
-  await loadSettings();
-  await Promise.all([loadTransactions(), loadDebts(), loadSubscriptions(), loadSavings(), loadCards()]);
+  await Promise.all([
+    loadCategories(),
+    loadSettings(),
+    loadTransactions(),
+    loadDebts(),
+    loadSubscriptions(),
+    loadSavings(),
+    loadCards(),
+  ]);
   revealApp();
 })();
 
