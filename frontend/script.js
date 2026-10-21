@@ -5277,7 +5277,7 @@ let bootDone = false;
 function revealApp() {
   if (bootDone) return;
   bootDone = true;
-  const wait = Math.max(0, 800 - (Date.now() - bootStarted));
+  const wait = Math.max(0, 200 - (Date.now() - bootStarted));
   setTimeout(() => {
     document.documentElement.classList.remove("booting");
     document.documentElement.classList.add("ready");
