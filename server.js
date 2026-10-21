@@ -40,9 +40,20 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.use(require('compression')());
 app.use(express.json({ limit: '1mb' }));
 app.use(guardTraffic);
-app.use(express.static(path.join(__dirname, 'frontend')));
+app.use(express.static(path.join(__dirname, 'frontend'), {
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    if (/\.(html)$/i.test(filePath) || /[\\/]sw\.js$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  },
+}));
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {

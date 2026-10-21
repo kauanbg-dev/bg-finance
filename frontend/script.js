@@ -2019,13 +2019,40 @@ function markEmpty(canvasId, empty) {
   document.getElementById(canvasId)?.closest(".chart-card")?.classList.toggle("is-empty", empty);
 }
 
+let chartLib = null;
+function loadChartLib() {
+  if (typeof Chart !== "undefined") return Promise.resolve();
+  if (chartLib) return chartLib;
+  chartLib = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "chart.umd.min.js";
+    script.onload = resolve;
+    script.onerror = () => {
+      chartLib = null;
+      reject(new Error("Não foi possível carregar os gráficos"));
+    };
+    document.head.appendChild(script);
+  });
+  return chartLib;
+}
+
 function updateCharts(rows, income, expense) {
   if (document.getElementById("view-home")?.hidden) {
     chartsNeedDraw = true;
     return;
   }
   chartsNeedDraw = false;
-  if (typeof Chart === "undefined") return;
+  if (typeof Chart === "undefined") {
+    loadChartLib()
+      .then(() => {
+        if (!chartsFoldOpen()) return;
+        const next = filteredRows();
+        const sum = totals(next);
+        updateCharts(next, sum.income, sum.expense);
+      })
+      .catch(() => {});
+    return;
+  }
   chartDefaults();
   const byMonth = new Map();
   const byCat = new Map();
