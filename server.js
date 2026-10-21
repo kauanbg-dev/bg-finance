@@ -18,10 +18,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "https://cdn.jsdelivr.net", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+      connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
@@ -31,8 +31,17 @@ app.use(helmet({
   },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
-app.use(cors());
+const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+const corsOrigins = new Set([APP_URL, 'http://localhost:3000', 'http://127.0.0.1:3000']);
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || corsOrigins.has(String(origin).replace(/\/$/, ''))) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' }));
+app.use(guardTraffic);
 app.use(express.static(path.join(__dirname, 'frontend')));
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -41,10 +50,91 @@ if (!JWT_SECRET) {
 }
 
 const MIN_PASSWORD = 10;
+const BCRYPT_ROUNDS = 12;
+const SESSION_COOKIE = 'bg_session';
+const SESSION_MS = 12 * 60 * 60 * 1000;
+const attempts = new Map();
+
+function clientIp(req) {
+  return String(req.ip || req.socket?.remoteAddress || 'unknown');
+}
+
+function tooMany(res) {
+  res.set('Retry-After', '60');
+  return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+}
+
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const bucket = attempts.get(key);
+  if (!bucket || now - bucket.start >= windowMs) {
+    attempts.set(key, { start: now, count: 1 });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > max;
+}
+
+function guardTraffic(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const ip = clientIp(req);
+  const route = req.path;
+  const auth = route === '/auth/login' || route === '/login'
+    || route === '/auth/register' || route === '/register'
+    || route === '/auth/forgot' || route === '/auth/reset';
+  if (auth && rateLimited(`auth:${ip}`, 40, 15 * 60 * 1000)) return tooMany(res);
+  if (route === '/telegram/webhook' && rateLimited(`tg:${ip}`, 120, 60 * 1000)) return tooMany(res);
+  if (!auth && route !== '/telegram/webhook') {
+    const hasSession = Boolean(cookieValue(req, SESSION_COOKIE) || /^Bearer\s+\S+/i.test(String(req.headers.authorization || '')));
+    if (hasSession && rateLimited(`api:${ip}`, 240, 60 * 1000)) return tooMany(res);
+    if (!hasSession && rateLimited(`api-unauth:${ip}`, 60, 60 * 1000)) return tooMany(res);
+  }
+  next();
+}
+
+function cookieValue(req, name) {
+  const raw = String(req.headers.cookie || '');
+  for (const part of raw.split(';')) {
+    const cut = part.indexOf('=');
+    if (cut < 0) continue;
+    if (part.slice(0, cut).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(cut + 1).trim());
+    } catch {
+      return part.slice(cut + 1).trim();
+    }
+  }
+  return '';
+}
+
+function sessionCookie() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER_EXTERNAL_URL),
+    sameSite: 'strict',
+    maxAge: SESSION_MS,
+    path: '/',
+  };
+}
+
+function issueSession(res, token) {
+  res.cookie(SESSION_COOKIE, token, sessionCookie());
+}
+
+function clearSession(res) {
+  res.clearCookie(SESSION_COOKIE, { ...sessionCookie(), maxAge: 0 });
+}
+
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [key, bucket] of attempts) {
+    if (bucket.start < cutoff) attempts.delete(key);
+  }
+}, 10 * 60 * 1000).unref();
 
 async function authenticateToken(req, res, next) {
   const header = req.headers.authorization;
-  const token = header && header.split(' ')[1];
+  const token = (header && header.split(' ')[1]) || cookieValue(req, SESSION_COOKIE);
 
   if (!token) {
     return res.status(401).json({ error: 'Token ausente' });
@@ -168,8 +258,12 @@ async function register(req, res) {
     return res.status(400).json({ error: 'Preencha nome, email e senha' });
   }
 
-  if (rateLimited(`register:${req.ip}`, 5, 15 * 60 * 1000)) {
-    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  if (!email.includes('@') || email.length > 254) {
+    return res.status(400).json({ error: 'Digite um e-mail valido' });
+  }
+
+  if (rateLimited(`register:${clientIp(req)}`, 5, 15 * 60 * 1000)) {
+    return tooMany(res);
   }
 
   if (password.length < MIN_PASSWORD) {
@@ -177,7 +271,7 @@ async function register(req, res) {
   }
 
   try {
-    const hash = await bcrypt.hash(password, 10);
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
     await db.query(
       'INSERT INTO users (name, email, password) VALUES ($1, $2, $3)',
@@ -195,25 +289,7 @@ async function register(req, res) {
   }
 }
 
-const attempts = new Map();
-
-function rateLimited(key, max, windowMs) {
-  const now = Date.now();
-  const recent = (attempts.get(key) || []).filter((t) => now - t < windowMs);
-  recent.push(now);
-  attempts.set(key, recent);
-  return recent.length > max;
-}
-
-setInterval(() => {
-  const cutoff = Date.now() - 60 * 60 * 1000;
-  for (const [key, list] of attempts) {
-    if (!list.some((t) => t > cutoff)) attempts.delete(key);
-  }
-}, 10 * 60 * 1000).unref();
-
 const RESET_TTL_MINUTES = 30;
-const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
 const MAIL_READY = Boolean(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY);
 
 function hashToken(token) {
@@ -281,8 +357,8 @@ async function forgotPassword(req, res) {
     return res.status(400).json({ error: 'Digite um e-mail valido' });
   }
 
-  if (rateLimited(`forgot:${req.ip}`, 5, 15 * 60 * 1000) || rateLimited(`forgot:${email}`, 3, 15 * 60 * 1000)) {
-    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  if (rateLimited(`forgot:${clientIp(req)}`, 5, 15 * 60 * 1000) || rateLimited(`forgot:${email}`, 3, 15 * 60 * 1000)) {
+    return tooMany(res);
   }
 
   try {
@@ -334,8 +410,8 @@ async function resetPassword(req, res) {
     return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
   }
 
-  if (rateLimited(`reset:${req.ip}`, 10, 15 * 60 * 1000)) {
-    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  if (rateLimited(`reset:${clientIp(req)}`, 8, 15 * 60 * 1000)) {
+    return tooMany(res);
   }
 
   try {
@@ -351,7 +427,7 @@ async function resetPassword(req, res) {
       return res.status(400).json({ error: 'Link invalido ou expirado. Peca um novo.' });
     }
 
-    const hash = await bcrypt.hash(password, 10);
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     await db.query(
       'UPDATE users SET password = $1, token_version = token_version + 1 WHERE id = $2',
       [hash, row.user_id]
@@ -366,9 +442,13 @@ async function resetPassword(req, res) {
 
 async function login(req, res) {
   const { email, password } = normalizeAuthInput(req.body);
+  const ip = clientIp(req);
 
-  if (rateLimited(`login:${req.ip}:${email}`, 10, 15 * 60 * 1000)) {
-    return res.status(429).json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' });
+  if (
+    rateLimited(`login-ip:${ip}`, 20, 15 * 60 * 1000)
+    || rateLimited(`login:${ip}:${email}`, 8, 15 * 60 * 1000)
+  ) {
+    return tooMany(res);
   }
 
   try {
@@ -392,10 +472,11 @@ async function login(req, res) {
     const token = jwt.sign(
       { id: user.id, email: user.email, ver: user.token_version || 1 },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '12h' }
     );
 
-    return res.json({ token });
+    issueSession(res, token);
+    return res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao fazer login:', err);
     return res.status(500).json({ error: 'Erro no servidor' });
@@ -412,6 +493,10 @@ app.post('/auth/login', login);
 app.post('/login', login);
 app.post('/auth/forgot', forgotPassword);
 app.post('/auth/reset', resetPassword);
+app.post('/auth/logout', (req, res) => {
+  clearSession(res);
+  return res.json({ ok: true });
+});
 
 function validAvatar(value) {
   return (
@@ -482,6 +567,7 @@ app.delete('/me', authenticateToken, async (req, res) => {
     if (!valid) return res.status(400).json({ error: 'Senha incorreta' });
 
     await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    clearSession(res);
     return res.json({ deleted: true });
   } catch (err) {
     console.error('Erro ao apagar conta:', err);

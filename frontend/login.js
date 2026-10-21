@@ -4,7 +4,11 @@ const submitBtn = document.getElementById("submit-btn");
 const emailInput = document.getElementById("email");
 const params = new URLSearchParams(location.search);
 
-if (localStorage.getItem("token")) window.location.href = "index.html";
+fetch("/me", { credentials: "include", cache: "no-store" })
+  .then((res) => {
+    if (res.ok) window.location.href = "index.html";
+  })
+  .catch(() => {});
 if (params.get("email")) emailInput.value = params.get("email");
 if (params.get("reset") === "1") setMsg(msg, "Senha alterada! Entre com a nova senha.", "success");
 if (params.get("registered") === "1") setMsg(msg, "Conta criada! Agora é só entrar.", "success");
@@ -24,8 +28,8 @@ form.addEventListener("submit", async (e) => {
   setMsg(msg, "");
   setLoading(submitBtn, true, "Entrando…");
   try {
-    const data = await postJSON("/auth/login", { email, password });
-    localStorage.setItem("token", data.token);
+    await postJSON("/auth/login", { email, password });
+    localStorage.removeItem("token");
     window.location.href = "index.html";
   } catch (err) {
     setMsg(msg, err.status === 401 ? "E-mail ou senha incorretos." : err.message);

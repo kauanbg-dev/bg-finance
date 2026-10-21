@@ -1,6 +1,4 @@
-const token = localStorage.getItem("token");
 const previewMode = new URLSearchParams(location.search).get("preview") === "1";
-if (!token && !previewMode) window.location.href = "login.html";
 
 const CATEGORY_KEY = "bg-finance-categories";
 const INCOME_CATS = ["Salário", "Freelance", "Investimentos", "Benefícios", "Reembolso", "Outros"];
@@ -144,16 +142,6 @@ function catColor(name) {
   return PALETTE[h % PALETTE.length];
 }
 
-function parseToken() {
-  try {
-    return JSON.parse(atob(token.split(".")[1]));
-  } catch {
-    return null;
-  }
-}
-
-const payload = parseToken();
-
 const form = document.getElementById("transaction-form");
 const tbody = document.getElementById("transaction-list");
 const incomeDisplay = document.getElementById("income");
@@ -228,18 +216,43 @@ let chartsNeedDraw = true;
 let loading = true;
 let categoryTouched = false;
 
-logoutBtn?.addEventListener("click", () => {
+async function leaveSession() {
+  try {
+    await fetch("/auth/logout", { method: "POST", credentials: "include", cache: "no-store" });
+  } catch {
+    /* segue para o login mesmo se o servidor nao responder */
+  }
   localStorage.removeItem("token");
   window.location.href = "login.html";
+}
+
+logoutBtn?.addEventListener("click", () => {
+  leaveSession();
 });
 
 /* ---------- feedback ---------- */
+
+function friendlyError(err, fallback = "Não foi possível completar a ação. Tente de novo.") {
+  const raw = String(err?.message ?? err ?? "").trim();
+  if (!raw) return fallback;
+  if (
+    /cannot read propert/i.test(raw)
+    || /is not a function/i.test(raw)
+    || /unexpected token/i.test(raw)
+    || /undefined is not/i.test(raw)
+    || /failed to fetch|networkerror|load failed/i.test(raw)
+    || /^(typeerror|referenceerror|syntaxerror|error):/i.test(raw)
+  ) {
+    return fallback;
+  }
+  return raw;
+}
 
 function toast(message, kind = "success", action) {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   const text = document.createElement("span");
-  text.textContent = message;
+  text.textContent = kind === "error" ? friendlyError(message) : message;
   el.appendChild(text);
   let timer;
   const dismiss = () => {
@@ -331,10 +344,6 @@ function askDialog({ title, text = "", placeholder = "", okLabel = "Confirmar", 
 }
 
 /* ---------- api ---------- */
-
-function authHeaders(extra = {}) {
-  return { ...extra, Authorization: "Bearer " + token };
-}
 
 function handleAuth(response) {
   if (response.status === 401 || response.status === 403) {
@@ -825,8 +834,9 @@ async function api(method, url, body) {
   if (previewMode) return previewApi(method, url, body);
   const response = await fetch(url, {
     method,
-    headers: authHeaders(body ? { "Content-Type": "application/json" } : {}),
+    headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
     cache: "no-store",
   });
   if (handleAuth(response)) throw new Error("Sessão expirada");
@@ -851,8 +861,8 @@ const accountSince = document.getElementById("account-since");
 const photoInput = document.getElementById("account-photo-input");
 const photoLabel = document.getElementById("account-photo-label");
 const photoRemove = document.getElementById("account-photo-remove");
-const userId = payload?.id || (previewMode ? "preview" : "anon");
-const avatarKey = `bg-avatar:${userId}`;
+let userId = previewMode ? "preview" : "anon";
+let avatarKey = `bg-avatar:${userId}`;
 
 function sinceLabel(value) {
   const date = new Date(value);
@@ -912,7 +922,7 @@ function rememberAvatar(dataUrl) {
 }
 
 setAccount({
-  email: payload?.email || (previewMode ? "demo@bgfinance.app" : ""),
+  email: previewMode ? "demo@bgfinance.app" : "",
   name: previewMode ? "Conta demo" : "",
   created_at: previewMode ? previewProfile.created_at : "",
   avatar: cachedAvatar(),
@@ -956,7 +966,7 @@ document.getElementById("delete-account")?.addEventListener("click", async () =>
     localStorage.removeItem(SETTINGS_KEY);
     localStorage.removeItem(CATEGORY_KEY);
     localStorage.removeItem(avatarKey);
-    window.location.href = "login.html";
+    await leaveSession();
   } catch (err) {
     toast(err.message, "error");
   }
@@ -1026,15 +1036,6 @@ photoRemove?.addEventListener("click", async () => {
 });
 
 if (previewMode && cachedAvatar()) previewProfile.avatar = cachedAvatar();
-
-if (token || previewMode) {
-  api("GET", "/me")
-    .then((me) => {
-      rememberAvatar(me?.avatar || "");
-      setAccount(me || {});
-    })
-    .catch(() => {});
-}
 
 /* ---------- categorias ---------- */
 
@@ -2750,8 +2751,30 @@ document.addEventListener("keydown", (e) => {
   else closeOpenEntryForm();
 });
 
+const txModal = document.getElementById("tx-modal");
+
+function openTxModal(focus) {
+  if (!txModal) return;
+  if (dateInput && !dateInput.value) dateInput.value = today();
+  txModal.classList.remove("hidden");
+  document.body.classList.add("modal-lock");
+  const field = focus || form?.querySelector("input:not([type='hidden']):not(:disabled)");
+  requestAnimationFrame(() => field?.focus({ preventScroll: true }));
+}
+
+function closeTxModal() {
+  txModal?.classList.add("hidden");
+  if (editModal?.classList.contains("hidden") && dialog?.classList.contains("hidden")) {
+    document.body.classList.remove("modal-lock");
+  }
+}
+
 function openEntryForm(target, focus) {
   if (!target) return;
+  if (target.id === "transaction-form") {
+    openTxModal(focus);
+    return;
+  }
   target.classList.remove("hidden");
   const launch = document.querySelector(`[data-open-form="${target.id}"]`);
   if (launch) launch.hidden = true;
@@ -2764,6 +2787,10 @@ function openEntryForm(target, focus) {
 
 function closeEntryForm(target) {
   if (!target) return;
+  if (target.id === "transaction-form") {
+    closeTxModal();
+    return;
+  }
   target.classList.add("hidden");
   const launch = document.querySelector(`[data-open-form="${target.id}"]`);
   if (launch) launch.hidden = false;
@@ -2775,14 +2802,17 @@ function resetTransactionForm() {
   categoryTouched = false;
   if (dateInput) dateInput.value = today();
   setType("income");
-  closeEntryForm(form);
+  closeTxModal();
 }
 
 function closeOpenEntryForm() {
+  if (txModal && !txModal.classList.contains("hidden")) {
+    resetTransactionForm();
+    return;
+  }
   const openForm = document.querySelector(".app-view:not([hidden]) form.entry-form:not(.hidden)");
   if (!openForm) return;
-  if (openForm.id === "transaction-form") resetTransactionForm();
-  else if (openForm.id === "debt-form") resetDebtForm();
+  if (openForm.id === "debt-form") resetDebtForm();
   else if (openForm.id === "sub-form") resetSubForm();
   else if (openForm.id === "save-form") resetSaveForm();
   else if (openForm.id === "card-form") closeEntryForm(openForm);
@@ -2794,6 +2824,8 @@ function bindEntryForms() {
     btn.addEventListener("click", () => openEntryForm(document.getElementById(btn.dataset.openForm)));
   });
   document.getElementById("tx-cancel")?.addEventListener("click", resetTransactionForm);
+  document.getElementById("tx-modal-close")?.addEventListener("click", resetTransactionForm);
+  txModal?.querySelector(".modal-backdrop")?.addEventListener("click", resetTransactionForm);
 }
 
 /* ---------- menu, dívidas e ajustes ---------- */
@@ -3997,7 +4029,7 @@ function paintTelegram() {
   const link = document.getElementById("telegram-link");
   const unlink = document.getElementById("telegram-unlink");
   if (!status || !link || !unlink) return;
-  if (!telegramState.configured) {
+  if (!telegramState || !telegramState.configured) {
     status.textContent = "O bot ainda não está ativo neste servidor.";
     link.hidden = true;
     unlink.hidden = true;
@@ -4026,10 +4058,15 @@ async function loadTelegram() {
   const status = document.getElementById("telegram-status");
   if (!status) return;
   try {
-    telegramState = await api("GET", "/telegram");
+    const data = await api("GET", "/telegram");
+    telegramState = {
+      configured: Boolean(data?.configured),
+      linked: Boolean(data?.linked),
+      username: data?.username || "",
+    };
     paintTelegram();
   } catch (err) {
-    status.textContent = err.message;
+    status.textContent = friendlyError(err, "Não foi possível carregar o Telegram agora. Tente de novo em instantes.");
   }
 }
 
@@ -5180,6 +5217,18 @@ function bindCards() {
 }
 
 (async function init() {
+  if (!previewMode) {
+    try {
+      const me = await api("GET", "/me");
+      userId = me?.id || "anon";
+      avatarKey = `bg-avatar:${userId}`;
+      rememberAvatar(me?.avatar || "");
+      setAccount(me || {});
+    } catch {
+      window.location.href = "login.html";
+      return;
+    }
+  }
   if (monthFilter && !monthFilter.value) monthFilter.value = today().slice(0, 7);
   enhanceControls();
   buildChartPrefs();

@@ -1,4 +1,4 @@
-const CACHE = 'bg-finance-v56';
+const CACHE = 'bg-finance-v60';
 const SHELL = [
   '/',
   '/index.html',
@@ -14,6 +14,8 @@ const SHELL = [
   '/forgot.js',
   '/reset.js',
   '/theme.js',
+  '/theme-boot.js',
+  '/chart.umd.min.js',
   '/logo.png',
   '/piggy.png',
   '/icon-192.png',
@@ -39,7 +41,8 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/auth')) return;
+  const asset = url.pathname === '/' || /\.(html|js|css|png|webp|webmanifest|svg|ico)$/i.test(url.pathname);
+  if (!asset) return;
 
   event.respondWith(
     fetch(request)

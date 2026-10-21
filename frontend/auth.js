@@ -3,9 +3,26 @@ const AUTH_ICON = {
   eyeOff: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M2 2l20 20"/></svg>',
 };
 
+function friendlyError(err, fallback = "Não foi possível completar a ação. Tente de novo.") {
+  const raw = String(err?.message ?? err ?? "").trim();
+  if (!raw) return fallback;
+  if (
+    /cannot read propert/i.test(raw)
+    || /is not a function/i.test(raw)
+    || /unexpected token/i.test(raw)
+    || /undefined is not/i.test(raw)
+    || /failed to fetch|networkerror|load failed/i.test(raw)
+    || /^(typeerror|referenceerror|syntaxerror|error):/i.test(raw)
+  ) {
+    return fallback;
+  }
+  return raw;
+}
+
 function setMsg(el, text, kind = "error") {
-  el.textContent = text;
-  el.className = text ? `msg msg-${kind}` : "msg";
+  const shown = kind === "error" ? friendlyError(text) : text;
+  el.textContent = shown;
+  el.className = shown ? `msg msg-${kind}` : "msg";
 }
 
 function setLoading(btn, loading, label) {
@@ -22,6 +39,7 @@ async function postJSON(url, body) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      credentials: "include",
     });
   } catch {
     throw new Error("Sem conexão com o servidor. Tente de novo em instantes.");
