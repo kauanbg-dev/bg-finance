@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <meta name="theme-color" content="#0f172a" />
   <script src="theme-boot.js"></script>
+  <script>
+    if (new URLSearchParams(location.search).get("preview") !== "1") {
+      document.documentElement.classList.add("booting");
+    }
+  </script>
+  <style>html.booting body{visibility:hidden}</style>
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,7 +19,7 @@
   <link rel="icon" href="/icon-192.png" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
   <title>BG Finance</title>
-  <link rel="stylesheet" href="style.css?v=61" />
+  <link rel="stylesheet" href="style.css?v=63" />
 </head>
 <body>
   <div class="container">
@@ -325,6 +331,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar dívida
       </button>
+      <span data-form-home="debt-form" hidden></span>
       <form id="debt-form" class="debt-form entry-form hidden">
         <div class="field f-name">
           <label for="debt-name">Nome</label>
@@ -410,6 +417,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar cartão
       </button>
+      <span data-form-home="card-form" hidden></span>
       <form id="card-form" class="entry-form card-form hidden">
         <div class="field">
           <label for="card-issuer">Empresa</label>
@@ -477,6 +485,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
           Lançar no extrato
         </button>
+        <span data-form-home="charge-form" hidden></span>
         <form id="charge-form" class="entry-form hidden">
           <div class="field">
             <label for="charge-description">Descrição</label>
@@ -568,6 +577,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar assinatura
       </button>
+      <span data-form-home="sub-form" hidden></span>
       <form id="sub-form" class="debt-form entry-form hidden">
         <div class="field f-name">
           <label for="sub-name">Nome</label>
@@ -676,6 +686,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar
       </button>
+      <span data-form-home="save-form" hidden></span>
       <form id="save-form" class="debt-form entry-form hidden">
         <div class="field f-name">
           <label for="save-name">Nome</label>
@@ -807,6 +818,7 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
+      <div id="sheet-body">
       <form id="transaction-form" class="modal-form tx-form entry-form">
         <div class="field f-desc">
           <label>Descrição</label>
@@ -840,6 +852,7 @@
           <button class="btn primary" type="submit" id="submit-btn">Adicionar</button>
         </div>
       </form>
+      </div>
     </div>
   </div>
 
@@ -912,7 +925,7 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script src="script.js?v=61" defer></script>
+  <script src="script.js?v=63" defer></script>
   <script src="theme.js"></script>
   <script src="pwa.js"></script>
 </body>

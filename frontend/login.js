@@ -6,7 +6,8 @@ const params = new URLSearchParams(location.search);
 
 fetch("/me", { credentials: "include", cache: "no-store" })
   .then((res) => {
-    if (res.ok) window.location.href = "index.html";
+    const json = String(res.headers.get("content-type") || "").includes("application/json");
+    if (res.ok && json) window.location.replace("index.html");
   })
   .catch(() => {});
 if (params.get("email")) emailInput.value = params.get("email");
@@ -18,21 +19,33 @@ document.getElementById("forgot-link").addEventListener("click", (e) => {
   if (email) e.currentTarget.href = `./forgot.html?email=${encodeURIComponent(email)}`;
 });
 
+let signingIn = false;
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (signingIn) return;
   const email = emailInput.value.trim().toLowerCase();
   const password = document.getElementById("password").value;
 
   if (!email || !password) return setMsg(msg, "Preencha e-mail e senha.");
 
+  signingIn = true;
   setMsg(msg, "");
   setLoading(submitBtn, true, "Entrando…");
   try {
     await postJSON("/auth/login", { email, password });
     localStorage.removeItem("token");
-    window.location.href = "index.html";
+    window.location.replace("index.html");
   } catch (err) {
-    setMsg(msg, err.status === 401 ? "E-mail ou senha incorretos." : err.message);
+    signingIn = false;
+    const cold = err.status >= 500 || /conexão|servidor/i.test(String(err.message || ""));
+    setMsg(
+      msg,
+      err.status === 401
+        ? "E-mail ou senha incorretos."
+        : cold
+          ? "O servidor ainda está ligando. Toque em Entrar de novo."
+          : err.message
+    );
     setLoading(submitBtn, false);
   }
 });
