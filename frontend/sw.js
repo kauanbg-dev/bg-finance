@@ -1,4 +1,4 @@
-const CACHE = 'bg-finance-v64';
+const CACHE = 'bg-finance-v65';
 const SHELL = [
   '/login.html',
   '/logo.png',
