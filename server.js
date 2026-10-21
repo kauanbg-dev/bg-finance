@@ -43,11 +43,28 @@ app.use(cors({
 app.use(require('compression')());
 app.use(express.json({ limit: '1mb' }));
 app.use(guardTraffic);
+app.use((req, res, next) => {
+  const appPage = req.path === '/' || req.path === '/index.html';
+  if (!appPage || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
+  const token = cookieValue(req, 'bg_session');
+  if (!token) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(302, '/login.html');
+  }
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(302, '/login.html');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'frontend'), {
   etag: true,
   lastModified: true,
+  index: false,
   setHeaders(res, filePath) {
-    if (/\.(html)$/i.test(filePath) || /[\\/]sw\.js$/i.test(filePath)) {
+    if (/\.(html|js)$/i.test(filePath) || /[\\/]sw\.js$/i.test(filePath)) {
       res.setHeader('Cache-Control', 'no-store');
       return;
     }
@@ -495,6 +512,7 @@ async function login(req, res) {
 }
 
 app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
 

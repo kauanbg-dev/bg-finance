@@ -4,6 +4,10 @@ const submitBtn = document.getElementById("submit-btn");
 const emailInput = document.getElementById("email");
 const params = new URLSearchParams(location.search);
 
+if ("caches" in window) {
+  caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("bg-finance")).map((key) => caches.delete(key)))).catch(() => {});
+}
+
 fetch("/me", { credentials: "include", cache: "no-store" })
   .then((res) => {
     const json = String(res.headers.get("content-type") || "").includes("application/json");
@@ -37,14 +41,15 @@ form.addEventListener("submit", async (e) => {
     window.location.replace("index.html");
   } catch (err) {
     signingIn = false;
-    const cold = err.status >= 500 || /conexão|servidor/i.test(String(err.message || ""));
+    const raw = String(err.message || "");
+    const cold = err.status >= 500 || /conexão|servidor|completar a ação/i.test(raw);
     setMsg(
       msg,
       err.status === 401
         ? "E-mail ou senha incorretos."
         : cold
           ? "O servidor ainda está ligando. Toque em Entrar de novo."
-          : err.message
+          : raw
     );
     setLoading(submitBtn, false);
   }
