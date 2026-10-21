@@ -1,26 +1,14 @@
-const CACHE = 'bg-finance-v60';
+const CACHE = 'bg-finance-v61';
 const SHELL = [
   '/',
   '/index.html',
   '/login.html',
-  '/register.html',
-  '/forgot.html',
-  '/reset.html',
   '/style.css',
   '/script.js',
-  '/auth.js',
-  '/login.js',
-  '/register.js',
-  '/forgot.js',
-  '/reset.js',
   '/theme.js',
   '/theme-boot.js',
-  '/chart.umd.min.js',
   '/logo.png',
-  '/piggy.png',
   '/icon-192.png',
-  '/icon-512.png',
-  '/manifest.webmanifest',
 ];
 
 self.addEventListener('install', (event) => {
@@ -44,15 +32,26 @@ self.addEventListener('fetch', (event) => {
   const asset = url.pathname === '/' || /\.(html|js|css|png|webp|webmanifest|svg|ico)$/i.test(url.pathname);
   if (!asset) return;
 
+  const isPage = url.pathname === '/' || url.pathname.endsWith('.html') || url.pathname.endsWith('sw.js');
+  if (isPage) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
+          return response;
+        })
+        .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html')))
+    );
+    return;
+  }
+
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
-        }
+    caches.match(request).then((cached) => {
+      const fresh = fetch(request).then((response) => {
+        if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
         return response;
-      })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html')))
+      });
+      return cached || fresh;
+    })
   );
 });
