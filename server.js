@@ -47,17 +47,17 @@ app.use((req, res, next) => {
   const appPage = req.path === '/' || req.path === '/index.html';
   if (!appPage || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
   const token = cookieValue(req, 'bg_session');
-  if (!token) {
-    res.setHeader('Cache-Control', 'no-store');
-    return res.redirect(302, '/login.html');
+  let signedIn = false;
+  if (token) {
+    try {
+      jwt.verify(token, process.env.JWT_SECRET);
+      signedIn = true;
+    } catch {
+      signedIn = false;
+    }
   }
-  try {
-    jwt.verify(token, process.env.JWT_SECRET);
-  } catch {
-    res.setHeader('Cache-Control', 'no-store');
-    return res.redirect(302, '/login.html');
-  }
-  next();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.sendFile(path.join(__dirname, 'frontend', signedIn ? 'index.html' : 'login.html'));
 });
 app.use(express.static(path.join(__dirname, 'frontend'), {
   etag: true,
