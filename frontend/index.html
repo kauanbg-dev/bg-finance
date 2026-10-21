@@ -5,7 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <meta name="theme-color" content="#0f172a" />
   <script src="theme-boot.js"></script>
-  <style>html.booting body{visibility:hidden}</style>
+  <style>
+    .boot-screen{
+      position:fixed;inset:0;z-index:9999;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+      background:#0f172a;color:#e5e7eb;
+    }
+    html[data-theme="light"] .boot-screen{background:#f3f6fb;color:#0f172a}
+    html:not(.booting) .boot-screen{opacity:0;pointer-events:none;visibility:hidden}
+    .boot-screen{transition:opacity .28s ease,visibility .28s}
+    .boot-logo{width:72px;height:72px;border-radius:20px}
+    .boot-title{font:800 22px/1 "Segoe UI",sans-serif;letter-spacing:-.03em}
+    .boot-hint{font:600 14px/1.3 "Segoe UI",sans-serif;opacity:.6}
+    .boot-spin{
+      width:28px;height:28px;border-radius:50%;
+      border:3px solid rgba(59,130,246,.2);border-top-color:#3b82f6;
+      animation:boot-spin .7s linear infinite;
+    }
+    @keyframes boot-spin{to{transform:rotate(360deg)}}
+  </style>
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -14,9 +32,15 @@
   <link rel="icon" href="/icon-192.png" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
   <title>BG Finance</title>
-  <link rel="stylesheet" href="style.css?v=66" />
+  <link rel="stylesheet" href="style.css?v=68" />
 </head>
 <body>
+  <div class="boot-screen" id="boot-screen" aria-live="polite" aria-busy="true">
+    <img class="boot-logo" src="logo.png" alt="" width="72" height="72">
+    <div class="boot-title">Finance</div>
+    <div class="boot-spin" aria-hidden="true"></div>
+    <p class="boot-hint">Carregando seus dados…</p>
+  </div>
   <div class="container">
     <div class="topbar">
       <div class="brand">
@@ -920,7 +944,7 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script src="script.js?v=66" defer></script>
+  <script src="script.js?v=68" defer></script>
   <script src="theme.js"></script>
   <script src="pwa.js?v=64"></script>
 </body>
