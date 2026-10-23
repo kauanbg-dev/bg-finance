@@ -2914,8 +2914,8 @@ function showView(name, scroll = true) {
   document.querySelectorAll(".app-view").forEach((el) => {
     el.hidden = el.id !== `view-${name}`;
   });
-  document.querySelectorAll(".nav-btn").forEach((btn) => {
-    const on = btn.dataset.view === name || (name === "cards" && btn.dataset.view === "debts");
+  document.querySelectorAll(".nav-btn[data-view]").forEach((btn) => {
+    const on = btn.dataset.view === name;
     btn.classList.toggle("is-active", on);
     if (on) btn.setAttribute("aria-current", "page");
     else btn.removeAttribute("aria-current");
@@ -2945,7 +2945,7 @@ function pinTabbar() {
 }
 
 function bindNavigation() {
-  document.querySelectorAll(".nav-btn").forEach((btn) => {
+  document.querySelectorAll(".nav-btn[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => showView(btn.dataset.view));
   });
   window.addEventListener("hashchange", () => showView(viewFromHash(), false));
@@ -5132,8 +5132,6 @@ function bindCards() {
     const submit = document.getElementById("card-submit");
     if (submit) submit.textContent = "Salvar cartão";
   });
-  document.getElementById("open-cards")?.addEventListener("click", () => showView("cards"));
-  document.getElementById("cards-back")?.addEventListener("click", () => showView("debts"));
   document.querySelectorAll("#card-form [data-brand]").forEach((btn) => {
     btn.addEventListener("click", () => setCardBrand(btn.dataset.brand));
   });
