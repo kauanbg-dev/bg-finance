@@ -821,17 +821,6 @@ input[type="number"]{
   border: 1px solid rgba(var(--wash),.06);
   transition: transform .18s, border-color .18s;
 }
-.card::after{
-  content: "";
-  position: absolute;
-  right: -40px;
-  top: -40px;
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
-  pointer-events: none;
-}
 .card:hover{ border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .card.income{ --accent: #34d399; }
 .card.expense{ --accent: #f87171; }
@@ -1717,22 +1706,48 @@ body.modal-lock{ overflow: hidden; }
 
 /* DESKTOP */
 @media (min-width: 1100px){
-  .container{ padding: 28px 40px 12px; }
-  .brand-text h1{ font-size: 26px; }
-  .subtitle{ font-size: 14px; margin-top: 6px; }
-  .top-actions{ gap: 14px; }
+  .container{
+    display: block;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 16px 28px 28px 252px;
+  }
+  .brand-text h1{ font-size: 24px; }
+  .subtitle{ font-size: 13px; margin-top: 2px; }
+  .top-actions{ gap: 10px; }
+  .brand-logo{ width: 42px; height: 42px; }
 
-  .cards{ grid-template-columns: repeat(4, 1fr); }
+  .cards{ grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
   .card.total,
   .card.income,
   .card.expense,
   .card.rate{ order: 0; grid-column: auto; }
   .due-strip{ order: 1; grid-column: 1 / -1; }
-  .card.total p{ font-size: 26px; }
-  .card{ padding: 18px; }
-  .card p{ font-size: 26px; }
-  .card-icon{ width: 34px; height: 34px; border-radius: 11px; }
-  .card-icon svg{ width: 18px; height: 18px; }
+  .card.total p{ font-size: 22px; }
+  .card{ padding: 14px; border-radius: 14px; }
+  .card p{ font-size: 22px; margin-top: 6px; }
+  .card-icon{ width: 28px; height: 28px; border-radius: 9px; }
+  .card-icon svg{ width: 15px; height: 15px; }
+  .add-launch,
+  .add-launch-main{
+    width: auto;
+    min-height: 38px;
+    margin: 0 0 12px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 12px;
+    box-shadow: none;
+  }
+  .view-head{ margin: 0 0 10px; }
+  .view-head h2{ font-size: 18px; }
+  .view-head p{ font-size: 13px; }
+  .filter-row{ padding: 10px 12px; border-radius: 14px; gap: 10px; }
+  .seg-btn{ min-height: 34px; padding: 6px 10px; font-size: 13px; }
+  .segmented{ border-radius: 10px; }
+  .pay-btn,
+  .debt-form-actions .btn{ min-width: 0; }
+  .toasts{ bottom: 20px; }
 
   .form-card{
     grid-template-columns: 2fr 1fr 1.2fr auto;
@@ -1747,8 +1762,8 @@ body.modal-lock{ overflow: hidden; }
     flex-wrap: wrap;
     align-items: end;
     justify-content: space-between;
-    gap: 12px;
-    padding: 14px;
+    gap: 10px;
+    padding: 10px 12px;
   }
   .filter-row .field{ flex: 1; min-width: 140px; }
   .filter-row .field-month{ flex: 1.4; min-width: 230px; }
@@ -2900,3 +2915,63 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
 .card-actions .btn{ width: 100%; }
 .card-form .segmented{ display: flex; }
 .card-form .seg-btn{ flex: 1; padding-inline: 6px; }
+
+@media (min-width: 1100px){
+  .container{
+    display: block;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 16px 28px 28px 252px;
+  }
+  .tabbar{
+    display: flex !important;
+    flex-direction: column;
+    justify-content: flex-start;
+    position: fixed !important;
+    z-index: 40;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    width: 228px !important;
+    height: 100vh !important;
+    max-height: 100vh;
+    transform: none !important;
+    margin: 0;
+    padding: 16px 10px;
+    gap: 4px;
+    border-radius: 0 16px 16px 0;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, .16);
+  }
+  .topbar, .app-view{ grid-column: auto; grid-row: auto; }
+  .nav-btn{
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 40px;
+    height: 40px;
+    gap: 10px;
+    padding: 0 10px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+  .nav-btn svg{ width: 16px; height: 16px; }
+  .nav-mark{ width: 16px; height: 16px; }
+  .nav-badge{ position: static; margin-left: auto; top: auto; left: auto; right: auto; }
+  .add-launch,
+  .add-launch-main{
+    width: auto;
+    min-height: 38px;
+    margin: 0 0 12px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 12px;
+    box-shadow: none;
+  }
+  .view-head{ margin: 0 0 10px; }
+  .view-head h2{ font-size: 18px; }
+  .card-actions{ margin-top: 16px; margin-bottom: 16px; }
+  .card-actions .btn{ width: auto; }
+}
