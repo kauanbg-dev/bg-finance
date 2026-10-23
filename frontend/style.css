@@ -759,12 +759,11 @@ input[type="number"]{
 .card.expense{ order: 3; }
 .card.rate{ order: 4; }
 .due-strip{
-  order: 2;
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin: 0 0 14px;
   padding: 12px 14px;
   border-radius: 16px;
   background: rgba(var(--wash), .04);
@@ -1723,7 +1722,7 @@ body.modal-lock{ overflow: hidden; }
   .card.income,
   .card.expense,
   .card.rate{ order: 0; grid-column: auto; }
-  .due-strip{ order: 1; grid-column: 1 / -1; }
+  .due-strip{ margin: 0 0 14px; }
   .card.total p{ font-size: 22px; }
   .card{ padding: 14px; border-radius: 14px; }
   .card p{ font-size: 22px; margin-top: 6px; }
@@ -1731,9 +1730,9 @@ body.modal-lock{ overflow: hidden; }
   .card-icon svg{ width: 15px; height: 15px; }
   .add-launch,
   .add-launch-main{
-    width: auto;
+    width: fit-content;
     min-height: 38px;
-    margin: 0 0 12px;
+    margin: 0 0 12px auto;
     padding: 8px 14px;
     font-size: 13px;
     border-radius: 12px;
@@ -3018,9 +3017,9 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   .nav-badge{ position: static; margin-left: auto; top: auto; left: auto; right: auto; }
   .add-launch,
   .add-launch-main{
-    width: auto;
+    width: fit-content;
     min-height: 38px;
-    margin: 0 0 12px;
+    margin: 0 0 12px auto;
     padding: 8px 14px;
     font-size: 13px;
     border-radius: 12px;
