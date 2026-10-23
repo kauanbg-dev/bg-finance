@@ -2544,10 +2544,10 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   right: var(--edge-right);
   bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-shift, 0px));
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  padding: 6px;
-  border-radius: 22px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+  padding: 4px 2px;
+  border-radius: 18px;
   border: 1px solid rgba(var(--wash), .12);
   background: var(--panel-solid);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
@@ -2567,10 +2567,11 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  min-height: 52px;
+  gap: 3px;
+  min-height: 56px;
+  padding: 6px 2px 5px;
   border: 0;
-  border-radius: 16px;
+  border-radius: 14px;
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -2578,12 +2579,14 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   font-weight: 700;
   cursor: pointer;
 }
-.nav-btn > span:not(.nav-badge){
+.nav-btn > span:not(.nav-badge):not(.nav-mark){
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.1;
 }
+.nav-full{ display: none; }
 .nav-btn.is-active{
   color: var(--text-strong);
   background: rgba(59, 130, 246, .16);
@@ -2607,6 +2610,38 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   text-align: center;
 }
 .nav-badge[hidden]{ display: none !important; }
+.nav-overflow{ position: relative; }
+.nav-more-list{
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--panel-solid);
+  border: 1px solid rgba(var(--wash), .12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .32);
+}
+.nav-more-list[hidden]{ display: none !important; }
+.nav-more-list .nav-btn{
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: 44px;
+  gap: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+.nav-more-list .nav-btn > span:not(.nav-badge):not(.nav-mark){
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+}
 
 .import-card{ margin-top: 0; margin-bottom: 16px; }
 .import-card .segmented{ margin: 4px 0 10px; }
@@ -2945,6 +2980,18 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
     box-shadow: 8px 0 24px rgba(0, 0, 0, .16);
   }
   .topbar, .app-view{ grid-column: auto; grid-row: auto; }
+  .nav-overflow{ display: contents; }
+  #nav-more-btn{ display: none !important; }
+  .nav-more-list,
+  .nav-more-list[hidden]{
+    display: contents !important;
+    position: static;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
   .nav-btn{
     flex: none;
     flex-direction: row;
@@ -2957,6 +3004,15 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
     font-size: 13px;
     border-radius: 10px;
   }
+  .nav-btn > span:not(.nav-badge):not(.nav-mark){
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+  .nav-short{ display: none; }
+  .nav-full{ display: inline; }
   .nav-btn svg{ width: 16px; height: 16px; }
   .nav-mark{ width: 16px; height: 16px; }
   .nav-badge{ position: static; margin-left: auto; top: auto; left: auto; right: auto; }
@@ -2974,4 +3030,30 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   .view-head h2{ font-size: 18px; }
   .card-actions{ margin-top: 16px; margin-bottom: 16px; }
   .card-actions .btn{ width: auto; }
+  .month-stack{ gap: 8px; }
+  .debt-item{
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border-left-width: 3px;
+  }
+  .debt-title,
+  .debt-amount{ font-size: 14px; }
+  .debt-meta{ margin-top: 2px; font-size: 12px; }
+  .debt-tags{ margin-top: 4px; gap: 4px; }
+  .tag{ padding: 2px 6px; font-size: 10px; }
+  .pay-btn{
+    min-width: 0;
+    min-height: 30px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 8px;
+  }
+  .debt-item .action-btn{
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+  .sheet-card.debt-group{ padding: 10px 12px; border-radius: 14px; }
 }
