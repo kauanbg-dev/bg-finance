@@ -1731,13 +1731,14 @@ body.modal-lock{ overflow: hidden; }
   .add-launch,
   .add-launch-main{
     width: fit-content;
-    min-height: 38px;
+    min-height: 48px;
     margin: 0 0 12px auto;
-    padding: 8px 14px;
-    font-size: 13px;
-    border-radius: 12px;
-    box-shadow: none;
+    padding: 12px 22px;
+    font-size: 15px;
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, .32);
   }
+  .add-launch svg{ width: 20px; height: 20px; }
   .view-head{ margin: 0 0 10px; }
   .view-head h2{ font-size: 18px; }
   .view-head p{ font-size: 13px; }
@@ -1940,15 +1941,15 @@ html[data-theme="light"] .toast{
   justify-content: center;
   gap: 8px;
   width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   margin: 0 0 16px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-radius: 16px;
   border: 1px dashed rgba(var(--wash), .28);
   background: rgba(var(--wash), .03);
   color: var(--text);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   cursor: pointer;
 }
 .add-launch svg{ flex: 0 0 auto; }
@@ -3018,13 +3019,14 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   .add-launch,
   .add-launch-main{
     width: fit-content;
-    min-height: 38px;
+    min-height: 48px;
     margin: 0 0 12px auto;
-    padding: 8px 14px;
-    font-size: 13px;
-    border-radius: 12px;
-    box-shadow: none;
+    padding: 12px 22px;
+    font-size: 15px;
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, .32);
   }
+  .add-launch svg{ width: 20px; height: 20px; }
   .view-head{ margin: 0 0 10px; }
   .view-head h2{ font-size: 18px; }
   .card-actions{ margin-top: 16px; margin-bottom: 16px; }
