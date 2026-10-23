@@ -1,8 +1,9 @@
-const CACHE = 'bg-finance-v82';
+const CACHE = 'bg-finance-v87';
 const SHELL = [
   '/login.html',
   '/logo.png',
   '/icon-192.png',
+  '/favicon.ico',
 ];
 
 self.addEventListener('install', (event) => {
