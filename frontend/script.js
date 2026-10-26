@@ -1,4 +1,18 @@
-const previewMode = new URLSearchParams(location.search).get("preview") === "1";
+const PREVIEW_FLAG = "bg-preview";
+const previewRequested = new URLSearchParams(location.search).get("preview") === "1" || location.hash === "#preview";
+if (previewRequested) {
+  try {
+    sessionStorage.setItem(PREVIEW_FLAG, "1");
+  } catch {
+    /* mock local nao depende desse storage */
+  }
+}
+let previewMode = previewRequested;
+try {
+  previewMode = previewMode || sessionStorage.getItem(PREVIEW_FLAG) === "1";
+} catch {
+  /* segue com o query string */
+}
 
 const CATEGORY_KEY = "bg-finance-categories";
 const INCOME_CATS = ["Salário", "Freelance", "Investimentos", "Benefícios", "Reembolso", "Outros"];
@@ -500,7 +514,18 @@ function previewApi(method, url, body) {
   }
   if (url === "/me") {
     if (method === "DELETE") return { deleted: true };
-    if (method === "PUT") previewProfile = { ...previewProfile, avatar: body?.avatar || null };
+    if (method === "PUT") {
+      const nextEmail = body?.email != null ? String(body.email).trim().toLowerCase() : previewProfile.email;
+      if (body?.newPassword || nextEmail !== previewProfile.email) {
+        if (!body?.currentPassword) throw new Error("Informe a senha atual");
+      }
+      previewProfile = {
+        ...previewProfile,
+        ...(body?.name != null ? { name: String(body.name).trim() } : {}),
+        ...(body?.email != null ? { email: nextEmail } : {}),
+        ...(Object.prototype.hasOwnProperty.call(body || {}, "avatar") ? { avatar: body.avatar || null } : {}),
+      };
+    }
     return { ...previewProfile };
   }
   if (url === "/categories") {
@@ -882,6 +907,7 @@ const photoLabel = document.getElementById("account-photo-label");
 const photoRemove = document.getElementById("account-photo-remove");
 let userId = previewMode ? "preview" : "anon";
 let avatarKey = `bg-avatar:${userId}`;
+let currentUser = previewMode ? { ...previewProfile } : {};
 
 function sinceLabel(value) {
   const date = new Date(value);
@@ -905,8 +931,9 @@ function paintAvatar(dataUrl) {
 }
 
 function setAccount(info) {
-  const email = info.email || "";
-  const name = (info.name || "").trim() || email.split("@")[0] || "Conta";
+  currentUser = { ...currentUser, ...(info || {}) };
+  const email = currentUser.email || "";
+  const name = (currentUser.name || "").trim() || email.split("@")[0] || "Conta";
   const letter = name.charAt(0).toUpperCase() || "B";
   if (miniEmail) miniEmail.textContent = email;
   if (miniLabel) miniLabel.textContent = name;
@@ -916,11 +943,11 @@ function setAccount(info) {
   if (menuLetter) menuLetter.textContent = letter;
   if (accountBtn) accountBtn.setAttribute("aria-label", `Abrir dados de ${name}`);
   if (accountSince) {
-    const since = info.created_at ? sinceLabel(info.created_at) : "";
+    const since = currentUser.created_at ? sinceLabel(currentUser.created_at) : "";
     accountSince.textContent = since;
     accountSince.hidden = !since;
   }
-  paintAvatar(info.avatar || "");
+  paintAvatar(currentUser.avatar || "");
 }
 
 function cachedAvatar() {
@@ -966,7 +993,13 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") openAccount(false);
+  if (event.key !== "Escape") return;
+  const profileModal = document.getElementById("profile-modal");
+  if (profileModal && !profileModal.classList.contains("hidden")) {
+    closeProfileModal();
+    return;
+  }
+  openAccount(false);
 });
 
 document.getElementById("delete-account")?.addEventListener("click", async () => {
@@ -1028,7 +1061,7 @@ async function saveAvatar(dataUrl) {
   paintAvatar(dataUrl);
   const saved = await api("PUT", "/me", { avatar: dataUrl || null });
   rememberAvatar(saved?.avatar || "");
-  paintAvatar(saved?.avatar || "");
+  setAccount(saved || { avatar: dataUrl || null });
 }
 
 photoInput?.addEventListener("change", async () => {
@@ -1054,6 +1087,81 @@ photoRemove?.addEventListener("click", async () => {
   }
 });
 
+const profileModal = document.getElementById("profile-modal");
+const profileForm = document.getElementById("profile-form");
+const profileName = document.getElementById("profile-name");
+const profileEmail = document.getElementById("profile-email");
+const profileCurrent = document.getElementById("profile-current");
+const profilePassword = document.getElementById("profile-password");
+const profilePassword2 = document.getElementById("profile-password2");
+
+function closeProfileModal() {
+  profileModal?.classList.add("hidden");
+  profileForm?.reset();
+}
+
+function openProfileModal() {
+  openAccount(false);
+  if (profileName) profileName.value = (currentUser.name || "").trim();
+  if (profileEmail) profileEmail.value = currentUser.email || "";
+  if (profileCurrent) profileCurrent.value = "";
+  if (profilePassword) profilePassword.value = "";
+  if (profilePassword2) profilePassword2.value = "";
+  profileModal?.classList.remove("hidden");
+  profileName?.focus();
+}
+
+document.getElementById("edit-profile")?.addEventListener("click", openProfileModal);
+document.getElementById("edit-profile-settings")?.addEventListener("click", openProfileModal);
+document.getElementById("profile-modal-close")?.addEventListener("click", closeProfileModal);
+document.getElementById("profile-cancel")?.addEventListener("click", closeProfileModal);
+profileModal?.addEventListener("click", (e) => {
+  if (e.target.classList.contains("modal-backdrop")) closeProfileModal();
+});
+
+profileForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = (profileName?.value || "").trim();
+  const email = (profileEmail?.value || "").trim().toLowerCase();
+  const currentPassword = profileCurrent?.value || "";
+  const newPassword = profilePassword?.value || "";
+  const confirm = profilePassword2?.value || "";
+  if (name.length < 2) {
+    toast("Nome precisa ter pelo menos 2 caracteres", "error");
+    return;
+  }
+  if (!email.includes("@")) {
+    toast("Digite um e-mail válido", "error");
+    return;
+  }
+  if (newPassword && newPassword.length < 10) {
+    toast("A nova senha precisa ter pelo menos 10 caracteres", "error");
+    return;
+  }
+  if (newPassword && newPassword !== confirm) {
+    toast("A confirmação da senha não bate", "error");
+    return;
+  }
+  const emailChanged = email !== String(currentUser.email || "").toLowerCase();
+  if ((emailChanged || newPassword) && !currentPassword) {
+    toast("Informe a senha atual para trocar e-mail ou senha", "error");
+    return;
+  }
+  try {
+    const saved = await api("PUT", "/me", {
+      name,
+      email,
+      ...(emailChanged || newPassword ? { currentPassword } : {}),
+      ...(newPassword ? { newPassword } : {}),
+    });
+    setAccount(saved || { name, email });
+    closeProfileModal();
+    toast("Cadastro atualizado");
+  } catch (err) {
+    toast(err.message || "Não foi possível salvar o cadastro", "error");
+  }
+});
+
 if (previewMode && cachedAvatar()) previewProfile.avatar = cachedAvatar();
 
 /* ---------- categorias ---------- */
@@ -1074,6 +1182,7 @@ function categoriesFor(type) {
 }
 
 function fillCategorySelect(select, type, selected) {
+  if (!select) return;
   const cats = categoriesFor(type);
   select.innerHTML = cats.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
   if (selected == null || selected === "") return;
@@ -5325,15 +5434,19 @@ window.addEventListener("pageshow", (event) => {
   if (start !== "home") showView(start, false);
   if (previewMode) allTransactions = demoTransactions();
   if (!document.getElementById("view-home")?.hidden) renderDashboard();
-  await Promise.all([
-    loadCategories(),
-    loadSettings(),
-    loadTransactions(),
-    loadDebts(),
-    loadSubscriptions(),
-    loadSavings(),
-    loadCards(),
-  ]);
+  try {
+    await Promise.all([
+      loadCategories(),
+      loadSettings(),
+      loadTransactions(),
+      loadDebts(),
+      loadSubscriptions(),
+      loadSavings(),
+      loadCards(),
+    ]);
+  } catch (err) {
+    toast(err.message || "Não foi possível carregar o painel", "error");
+  }
   revealApp();
 })();
 

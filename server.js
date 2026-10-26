@@ -555,32 +555,121 @@ app.get('/me', authenticateToken, async (req, res) => {
 });
 
 app.put('/me', authenticateToken, async (req, res) => {
-  if (!req.body || !Object.prototype.hasOwnProperty.call(req.body, 'avatar')) {
+  const body = req.body || {};
+  const hasAvatar = Object.prototype.hasOwnProperty.call(body, 'avatar');
+  const hasName = Object.prototype.hasOwnProperty.call(body, 'name');
+  const hasEmail = Object.prototype.hasOwnProperty.call(body, 'email');
+  const newPassword = String(body.newPassword || '');
+  const currentPassword = String(body.currentPassword || '');
+
+  if (!hasAvatar && !hasName && !hasEmail && !newPassword) {
     return res.status(400).json({ error: 'Nada para atualizar' });
   }
 
-  const avatar = req.body.avatar;
-  if (avatar !== null && avatar !== '' && !validAvatar(avatar)) {
-    return res.status(400).json({ error: 'Foto invalida. Use uma imagem menor.' });
+  if (hasAvatar) {
+    const avatar = body.avatar;
+    if (avatar !== null && avatar !== '' && !validAvatar(avatar)) {
+      return res.status(400).json({ error: 'Foto invalida. Use uma imagem menor.' });
+    }
+  }
+
+  let name;
+  if (hasName) {
+    name = String(body.name || '').trim();
+    if (name.length < 2 || name.length > 80) {
+      return res.status(400).json({ error: 'Nome precisa ter entre 2 e 80 caracteres' });
+    }
+  }
+
+  let email;
+  if (hasEmail) {
+    email = String(body.email || '').trim().toLowerCase();
+    if (!email.includes('@') || email.length > 254) {
+      return res.status(400).json({ error: 'Digite um e-mail valido' });
+    }
+  }
+
+  if (newPassword && newPassword.length < MIN_PASSWORD) {
+    return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
   }
 
   try {
-    const result = await db.query(
-      `UPDATE users
-       SET avatar = $1
-       WHERE id = $2
-       RETURNING id, name, email, created_at, avatar`,
-      [avatar || null, req.user.id]
+    const found = await db.query(
+      'SELECT id, name, email, password, avatar, token_version, created_at FROM users WHERE id = $1',
+      [req.user.id]
     );
+    const user = found.rows[0];
+    if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' });
 
-    if (!result.rows[0]) {
-      return res.status(404).json({ error: 'Usuario nao encontrado' });
+    const emailChanged = Boolean(email && email !== user.email);
+    const needsSecret = emailChanged || Boolean(newPassword);
+    if (needsSecret) {
+      if (!currentPassword) return res.status(400).json({ error: 'Informe a senha atual' });
+      const valid = await bcrypt.compare(currentPassword, user.password);
+      if (!valid) return res.status(400).json({ error: 'Senha atual incorreta' });
     }
 
-    return res.json(result.rows[0]);
+    const sets = [];
+    const values = [];
+    let i = 1;
+    if (hasAvatar) {
+      sets.push(`avatar = $${i++}`);
+      values.push(body.avatar || null);
+    }
+    if (hasName) {
+      sets.push(`name = $${i++}`);
+      values.push(name);
+    }
+    if (emailChanged) {
+      sets.push(`email = $${i++}`);
+      values.push(email);
+    }
+    if (newPassword) {
+      sets.push(`password = $${i++}`);
+      values.push(await bcrypt.hash(newPassword, BCRYPT_ROUNDS));
+      sets.push('token_version = token_version + 1');
+    }
+    if (!sets.length) {
+      return res.json({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        created_at: user.created_at,
+        avatar: user.avatar,
+      });
+    }
+
+    values.push(req.user.id);
+    const result = await db.query(
+      `UPDATE users SET ${sets.join(', ')} WHERE id = $${i}
+       RETURNING id, name, email, created_at, avatar, token_version`,
+      values
+    );
+    const saved = result.rows[0];
+    if (!saved) return res.status(404).json({ error: 'Usuario nao encontrado' });
+
+    if (emailChanged || newPassword) {
+      const token = jwt.sign(
+        { id: saved.id, email: saved.email, ver: saved.token_version || 1 },
+        JWT_SECRET,
+        { expiresIn: '12h' }
+      );
+      issueSession(res, token);
+    }
+
+    return res.json({
+      id: saved.id,
+      name: saved.name,
+      email: saved.email,
+      created_at: saved.created_at,
+      avatar: saved.avatar,
+    });
   } catch (err) {
-    console.error('Erro ao salvar foto:', err);
-    return res.status(500).json({ error: 'Erro ao salvar foto' });
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Email ja cadastrado' });
+    }
+    console.error('Erro ao atualizar cadastro:', err);
+    return res.status(500).json({ error: 'Erro ao atualizar cadastro' });
   }
 });
 
