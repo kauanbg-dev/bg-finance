@@ -1,8 +1,10 @@
-const CACHE = 'bg-finance-v87';
+const CACHE = 'bg-finance-v93';
 const SHELL = [
   '/login.html',
   '/logo.png',
   '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
   '/favicon.ico',
 ];
 
