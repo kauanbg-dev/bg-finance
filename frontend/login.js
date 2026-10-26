@@ -4,6 +4,14 @@ const submitBtn = document.getElementById("submit-btn");
 const emailInput = document.getElementById("email");
 const params = new URLSearchParams(location.search);
 
+try {
+  if (sessionStorage.getItem("bg-preview") === "1") {
+    window.location.replace("index.html?preview=1");
+  }
+} catch {
+  /* mock local */
+}
+
 if ("caches" in window) {
   caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("bg-finance")).map((key) => caches.delete(key)))).catch(() => {});
 }

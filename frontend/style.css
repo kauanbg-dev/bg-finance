@@ -837,6 +837,14 @@ input[type="number"]{
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 }
+.piggy-icon{
+  width: 16px;
+  height: 16px;
+  display: block;
+  background: currentColor;
+  -webkit-mask: url("piggy-mark.png") center / contain no-repeat;
+  mask: url("piggy-mark.png") center / contain no-repeat;
+}
 .card h3{ font-size: 12px; color: rgba(var(--wash),.78); font-weight: 600; }
 .card p{ margin-top: 8px; font-size: clamp(15px, 4.6vw, 22px); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .card.income p{ color: var(--money-in-soft); }
