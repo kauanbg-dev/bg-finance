@@ -14,6 +14,20 @@ try {
   /* segue com o query string */
 }
 
+function fitWatch() {
+  const width = Math.min(window.innerWidth, window.visualViewport?.width || window.innerWidth);
+  const height = Math.min(window.innerHeight, window.visualViewport?.height || window.innerHeight);
+  const watch = width <= 430 && height <= 520;
+  document.documentElement.classList.toggle("watch", watch);
+  document.documentElement.classList.toggle(
+    "watch-round",
+    watch && (Math.abs(width - height) < 48 || window.matchMedia("(shape: round)").matches)
+  );
+}
+fitWatch();
+window.addEventListener("resize", fitWatch);
+window.visualViewport?.addEventListener("resize", fitWatch);
+
 const CATEGORY_KEY = "bg-finance-categories";
 const INCOME_CATS = ["Salário", "Freelance", "Investimentos", "Benefícios", "Reembolso", "Outros"];
 const EXPENSE_CATS = [
