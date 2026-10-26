@@ -80,7 +80,8 @@ if (!JWT_SECRET) {
 const MIN_PASSWORD = 10;
 const BCRYPT_ROUNDS = 12;
 const SESSION_COOKIE = 'bg_session';
-const SESSION_MS = 12 * 60 * 60 * 1000;
+const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_JWT = '7d';
 const attempts = new Map();
 
 function clientIp(req) {
@@ -500,7 +501,7 @@ async function login(req, res) {
     const token = jwt.sign(
       { id: user.id, email: user.email, ver: user.token_version || 1 },
       JWT_SECRET,
-      { expiresIn: '12h' }
+      { expiresIn: SESSION_JWT }
     );
 
     issueSession(res, token);
@@ -652,7 +653,7 @@ app.put('/me', authenticateToken, async (req, res) => {
       const token = jwt.sign(
         { id: saved.id, email: saved.email, ver: saved.token_version || 1 },
         JWT_SECRET,
-        { expiresIn: '12h' }
+        { expiresIn: SESSION_JWT }
       );
       issueSession(res, token);
     }
