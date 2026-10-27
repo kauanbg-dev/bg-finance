@@ -1472,18 +1472,24 @@ function txRank(t) {
   return Number.isFinite(pos) && pos !== 0 ? pos : Number(t.id) || 0;
 }
 
-function placeLocal(list, id, beforeId, copyDate, dateKey = "date") {
+function placeLocal(list, id, beforeId, copyDate, dateKey = "date", dateValue = null) {
   const from = list.findIndex((item) => String(item.id) === String(id));
   if (from < 0) return false;
   const moved = list[from];
+  const prevDate = dateKey ? String(moved[dateKey] || "").slice(0, 10) : "";
   let to = beforeId == null || beforeId === "" ? list.length : list.findIndex((item) => String(item.id) === String(beforeId));
   if (to < 0) to = list.length;
-  if (to === from || to === from + 1) return false;
-  list.splice(from, 1);
-  if (from < to) to -= 1;
-  list.splice(to, 0, moved);
-  const neighbor = list[to + 1] || list[to - 1];
-  if (copyDate && neighbor) moved[dateKey] = neighbor[dateKey];
+  const sameSlot = to === from || to === from + 1;
+  if (!sameSlot) {
+    list.splice(from, 1);
+    if (from < to) to -= 1;
+    list.splice(to, 0, moved);
+  }
+  const idx = list.indexOf(moved);
+  const neighbor = list[idx + 1] || list[idx - 1];
+  const nextDate = dateValue || (copyDate && neighbor ? neighbor[dateKey] : null);
+  if (nextDate) moved[dateKey] = nextDate;
+  if (sameSlot && String(moved[dateKey] || "").slice(0, 10) === prevDate) return false;
   list.forEach((item, index) => {
     item.position = (list.length - index) * 1000;
   });
@@ -1494,7 +1500,7 @@ function dragHandle(label) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "drag-handle";
-  btn.title = "Segure e arraste";
+  btn.title = "Arraste para outro dia";
   btn.setAttribute("aria-label", label || "Arrastar");
   btn.innerHTML = ICON.grip;
   return btn;
@@ -1512,6 +1518,7 @@ function dropLine() {
   if (!dropLineEl) {
     dropLineEl = document.createElement("div");
     dropLineEl.className = "drop-line";
+    dropLineEl.innerHTML = '<span class="drop-line-mark"></span><span class="drop-line-label"></span>';
     document.body.appendChild(dropLineEl);
   }
   return dropLineEl;
@@ -1519,15 +1526,82 @@ function dropLine() {
 
 function hideDropLine() {
   dropLineEl?.classList.remove("is-on");
+  document.querySelectorAll(".is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
 }
 
-function beforeIdAt(kind, skip, y) {
-  const nodes = visibleDragNodes(kind, skip);
-  const line = dropLine();
-  if (!nodes.length) {
-    hideDropLine();
-    return null;
+function dropDayLabel(iso) {
+  if (!iso) return "Soltar aqui";
+  const parts = dayParts(iso);
+  if (parts.label === "Hoje") return "Mover para hoje";
+  if (parts.label === "Ontem") return "Mover para ontem";
+  return `Mover para ${parts.label.toLowerCase()} ${parts.num}`;
+}
+
+function hitDayCard(y) {
+  const cards = [...document.querySelectorAll(".day-card")].filter((card) => card.getClientRects().length);
+  for (const card of cards) {
+    const box = card.getBoundingClientRect();
+    if (y >= box.top - 12 && y <= box.bottom + 12) return card;
   }
+  let best = null;
+  let bestDist = 72;
+  for (const card of cards) {
+    const box = card.getBoundingClientRect();
+    const dist = y < box.top ? box.top - y : y > box.bottom ? y - box.bottom : 0;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = card;
+    }
+  }
+  return best;
+}
+
+function paintDropLine(anchor, atTop, labelText) {
+  const line = dropLine();
+  if (!anchor) {
+    hideDropLine();
+    return;
+  }
+  const box = anchor.getBoundingClientRect();
+  const inset = Math.min(16, Math.max(8, box.width * 0.04));
+  line.style.top = `${(atTop ? box.top : box.bottom) - 1}px`;
+  line.style.left = `${box.left + inset}px`;
+  line.style.width = `${Math.max(box.width - inset * 2, 48)}px`;
+  const label = line.querySelector(".drop-line-label");
+  if (label) label.textContent = labelText || "Soltar aqui";
+  line.classList.toggle("has-label", Boolean(labelText));
+  line.classList.add("is-on");
+}
+
+function planDrop(kind, skip, y) {
+  hideDropLine();
+  if (kind === "tx-card" || kind === "tx-row") {
+    const card = hitDayCard(y);
+    if (card) {
+      card.classList.add("is-drop-target");
+      const day = card.dataset.day || "";
+      const items = [...card.querySelectorAll(`[data-drag="${kind}"]`)].filter((node) => node !== skip && node.getClientRects().length);
+      let beforeEl = null;
+      for (const node of items) {
+        const box = node.getBoundingClientRect();
+        if (y < box.top + box.height / 2) {
+          beforeEl = node;
+          break;
+        }
+      }
+      let beforeId = beforeEl ? beforeEl.dataset.id : null;
+      if (!beforeId) {
+        const cards = [...document.querySelectorAll(".day-card")];
+        const next = cards[cards.indexOf(card) + 1];
+        const first = [...(next?.querySelectorAll(`[data-drag="${kind}"]`) || [])].find((node) => node !== skip);
+        beforeId = first ? first.dataset.id : null;
+      }
+      paintDropLine(beforeEl || items[items.length - 1] || card, Boolean(beforeEl || !items.length), dropDayLabel(day));
+      return { beforeId, date: day };
+    }
+  }
+  const nodes = visibleDragNodes(kind, skip);
+  if (!nodes.length) return { beforeId: null, date: "" };
   let beforeEl = null;
   for (const node of nodes) {
     const box = node.getBoundingClientRect();
@@ -1537,13 +1611,16 @@ function beforeIdAt(kind, skip, y) {
     }
   }
   const anchor = beforeEl || nodes[nodes.length - 1];
-  const box = anchor.getBoundingClientRect();
-  const inset = Math.min(16, Math.max(8, box.width * 0.04));
-  line.style.top = `${(beforeEl ? box.top : box.bottom) - 1}px`;
-  line.style.left = `${box.left + inset}px`;
-  line.style.width = `${Math.max(box.width - inset * 2, 40)}px`;
-  line.classList.add("is-on");
-  return beforeEl ? beforeEl.dataset.id : null;
+  const day = (beforeEl || anchor).dataset.day || "";
+  ((beforeEl || anchor).closest?.(".day-card") || beforeEl || anchor).classList.add("is-drop-target");
+  paintDropLine(anchor, Boolean(beforeEl), dropDayLabel(day));
+  return { beforeId: beforeEl ? beforeEl.dataset.id : null, date: day };
+}
+
+function beforeIdAt(kind, skip, y) {
+  const plan = planDrop(kind, skip, y);
+  blockDrag.plan = plan;
+  return plan?.beforeId ?? null;
 }
 
 const blockDrag = {
@@ -1558,6 +1635,7 @@ const blockDrag = {
   el: null,
   kind: "",
   onDrop: null,
+  plan: null,
 };
 
 function stopBlockDrag() {
@@ -1571,6 +1649,7 @@ function stopBlockDrag() {
   blockDrag.ghost = null;
   blockDrag.el = null;
   blockDrag.onDrop = null;
+  blockDrag.plan = null;
   hideDropLine();
 }
 
@@ -1587,12 +1666,24 @@ function liftBlockDrag(event) {
   } catch (_) {
     /* ignore */
   }
-  const ghost = el.cloneNode(true);
-  ghost.classList.add("drag-ghost");
-  ghost.style.width = `${el.getBoundingClientRect().width}px`;
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  const desc = (el.querySelector(".day-item-desc, .desc-cell")?.textContent || "").trim();
+  const amt = (el.querySelector(".day-item-amt, td.amount")?.textContent || "").trim();
+  const title = document.createElement("span");
+  title.className = "drag-ghost-desc";
+  title.textContent = desc || "Lançamento";
+  ghost.appendChild(title);
+  if (amt) {
+    const value = document.createElement("span");
+    value.className = "drag-ghost-amt";
+    value.textContent = amt;
+    ghost.appendChild(value);
+  }
+  ghost.style.width = `${Math.min(el.getBoundingClientRect().width, 340)}px`;
   document.body.appendChild(ghost);
-  ghost.style.left = `${event.clientX - 28}px`;
-  ghost.style.top = `${event.clientY - 20}px`;
+  ghost.style.left = `${event.clientX - 40}px`;
+  ghost.style.top = `${event.clientY - 22}px`;
   blockDrag.ghost = ghost;
   beforeIdAt(blockDrag.kind, el, event.clientY);
 }
@@ -1610,8 +1701,8 @@ document.addEventListener("pointermove", (event) => {
   event.preventDefault();
   if (Math.abs(event.clientX - blockDrag.startX) > 6 || Math.abs(event.clientY - blockDrag.startY) > 6) blockDrag.didMove = true;
   if (blockDrag.ghost) {
-    blockDrag.ghost.style.left = `${event.clientX - 28}px`;
-    blockDrag.ghost.style.top = `${event.clientY - 20}px`;
+    blockDrag.ghost.style.left = `${event.clientX - 40}px`;
+    blockDrag.ghost.style.top = `${event.clientY - 22}px`;
   }
   if (event.clientY < 72) window.scrollBy(0, -18);
   else if (event.clientY > window.innerHeight - 88) window.scrollBy(0, 18);
@@ -1620,16 +1711,17 @@ document.addEventListener("pointermove", (event) => {
 
 document.addEventListener("pointerup", (event) => {
   if (blockDrag.pointerId == null || event.pointerId !== blockDrag.pointerId) return;
-  const dropped = blockDrag.dragging && blockDrag.didMove;
   const el = blockDrag.el;
   const onDrop = blockDrag.onDrop;
   const kind = blockDrag.kind;
   const y = event.clientY || blockDrag.lastY;
-  const nextId = dropped ? beforeIdAt(kind, el, y) : null;
+  const plan = blockDrag.dragging ? planDrop(kind, el, y) : null;
+  const changedDay = Boolean(plan?.date && el?.dataset.day && plan.date !== el.dataset.day);
+  const dropped = blockDrag.dragging && (blockDrag.didMove || changedDay);
   stopBlockDrag();
   if (!dropped || !onDrop) return;
   if (el) el.dataset.dragged = "1";
-  onDrop(nextId);
+  onDrop(plan);
 });
 document.addEventListener("pointercancel", (event) => {
   if (event.pointerId === blockDrag.pointerId) stopBlockDrag();
@@ -1648,7 +1740,7 @@ function bindBlockDrag(el, kind, onDrop) {
     blockDrag.pointerId = event.pointerId;
     blockDrag.didMove = false;
     if (event.target.closest(".drag-handle")) liftBlockDrag(event);
-    else blockDrag.press = window.setTimeout(() => liftBlockDrag(event), 180);
+    else blockDrag.press = window.setTimeout(() => liftBlockDrag(event), 320);
   });
   el.addEventListener("click", (event) => {
     if (el.dataset.dragged === "1") {
@@ -1749,6 +1841,7 @@ function appendDayCard(iso, ordered, sortedList) {
   appendSpanRow("day-card-row", (cell) => {
     const card = document.createElement("div");
     card.className = `day-card${ordered.length > 1 ? " multi" : ""}`;
+    card.dataset.day = iso;
     const rail = document.createElement("div");
     rail.className = "day-rail";
     const num = document.createElement("span");
@@ -1766,6 +1859,7 @@ function appendDayCard(iso, ordered, sortedList) {
       if (index > 0) line.classList.add("has-edge");
       line.dataset.drag = "tx-card";
       line.dataset.id = String(t.id);
+      line.dataset.day = iso;
       line.appendChild(dragHandle(`Arrastar ${t.description}`));
       bindBlockDrag(line, "tx-card", (beforeId) => placeTransaction(t, beforeId));
       const row = document.createElement("button");
@@ -1857,11 +1951,30 @@ function renderFlat(sorted) {
   return Math.min(sorted.length, visibleCount);
 }
 
-async function placeTransaction(t, beforeId) {
-  if (!placeLocal(sortTxList(allTransactions), t.id, beforeId, true, "date")) return;
+async function confirmDayMove(t, toDay) {
+  const fromDay = txDate(t);
+  if (!toDay || toDay === fromDay) return true;
+  const dest = dropDayLabel(toDay).replace(/^Mover para /, "");
+  const ok = await askDialog({
+    title: "Mudar o dia?",
+    text: `Deseja mover “${t.description}” para ${dest}?`,
+    okLabel: "Sim, mudar",
+    cancelLabel: "Não",
+  });
+  return ok === true;
+}
+
+async function placeTransaction(t, plan) {
+  const beforeId = plan && typeof plan === "object" ? plan.beforeId : plan;
+  const date = plan && typeof plan === "object" ? plan.date : null;
+  const fromDay = txDate(t);
+  if (!(await confirmDayMove(t, date))) return;
+  if (!placeLocal(sortTxList(allTransactions), t.id, beforeId, true, "date", date || null)) return;
+  const toDay = txDate(t);
   renderDashboard();
+  if (fromDay !== toDay) toast(dropDayLabel(toDay).replace(/^Mover/, "Movido"));
   try {
-    await api("POST", `/transactions/${t.id}/place`, { before_id: beforeId });
+    await api("POST", `/transactions/${t.id}/place`, { before_id: beforeId ?? null, date: toDay });
   } catch (err) {
     toast(err.message, "error");
     await loadTransactions();
@@ -1873,6 +1986,7 @@ async function moveTransaction(t, dir) {
   const index = group.findIndex((item) => String(item.id) === String(t.id));
   const other = dir === "up" ? group[index - 1] : group[index + 1];
   if (index < 0 || !other) return;
+  if (!(await confirmDayMove(t, txDate(other)))) return;
   const a = txRank(t);
   const b = txRank(other);
   const dateA = t.date;
@@ -1967,6 +2081,7 @@ function appendTxRow(t, inDay, classes = [], dateSpan = 0, dayGroup = []) {
     });
     tr.dataset.drag = "tx-row";
     tr.dataset.id = String(t.id);
+    tr.dataset.day = txDate(t);
     bindBlockDrag(tr, "tx-row", (beforeId) => placeTransaction(t, beforeId));
     tbody.appendChild(tr);
 }

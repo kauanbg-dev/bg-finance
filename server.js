@@ -46,12 +46,13 @@ app.use(guardTraffic);
 app.use((req, res, next) => {
   const appPage = req.path === '/' || req.path === '/index.html';
   if (!appPage || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
-  const token = cookieValue(req, 'bg_session');
+  const token = cookieValue(req, SESSION_COOKIE);
   let signedIn = false;
   if (token) {
     try {
-      jwt.verify(token, process.env.JWT_SECRET);
+      const payload = jwt.verify(token, JWT_SECRET);
       signedIn = true;
+      refreshSession(res, payload);
     } catch {
       signedIn = false;
     }
@@ -140,14 +141,27 @@ function sessionCookie() {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER_EXTERNAL_URL),
-    sameSite: 'strict',
+    sameSite: 'lax',
     maxAge: SESSION_MS,
     path: '/',
   };
 }
 
+function signSession(user) {
+  return jwt.sign(
+    { id: user.id, email: user.email, ver: user.ver ?? user.token_version ?? 1 },
+    JWT_SECRET,
+    { expiresIn: SESSION_JWT }
+  );
+}
+
 function issueSession(res, token) {
   res.cookie(SESSION_COOKIE, token, sessionCookie());
+}
+
+function refreshSession(res, payload) {
+  if (!payload?.id) return;
+  issueSession(res, signSession(payload));
 }
 
 function clearSession(res) {
@@ -176,6 +190,7 @@ async function authenticateToken(req, res, next) {
       return res.status(403).json({ error: 'Token invalido' });
     }
     req.user = payload;
+    refreshSession(res, payload);
     next();
   } catch {
     return res.status(403).json({ error: 'Token invalido' });
@@ -208,7 +223,7 @@ async function stampTablePosition(table, id) {
   await db.query(`UPDATE ${table} SET position = $1 WHERE id = $1 AND position = 0`, [id]);
 }
 
-async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, extraSql = '', extraParams = [], orderSql }) {
+async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, extraSql = '', extraParams = [], orderSql, date = null }) {
   if (!/^(transactions|debts|subscriptions|savings|card_charges)$/.test(table)) return { placed: false };
   const dateBit = copyDate && dateCol ? `, ${dateCol} AS slot_date` : '';
   const rows = await db.query(
@@ -224,13 +239,13 @@ async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, e
   const [moved] = list.splice(from, 1);
   let to = beforeId == null ? list.length : list.findIndex((row) => Number(row.id) === beforeId);
   if (to < 0) to = list.length;
-  if (to === from) return { placed: false };
   list.splice(to, 0, moved);
   const neighbor = list[to + 1] || list[to - 1] || moved;
-  if (copyDate && dateCol) {
+  const nextDate = date || neighbor.slot_date;
+  if (copyDate && dateCol && nextDate) {
     await db.query(
       `UPDATE ${table} SET ${dateCol} = $1 WHERE id = $2 AND user_id = $3`,
-      [neighbor.slot_date, id, userId]
+      [nextDate, id, userId]
     );
   }
   if (list.length) {
@@ -498,13 +513,7 @@ async function login(req, res) {
       return res.status(401).json({ error: 'Credenciais invalidas' });
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, ver: user.token_version || 1 },
-      JWT_SECRET,
-      { expiresIn: SESSION_JWT }
-    );
-
-    issueSession(res, token);
+    issueSession(res, signSession(user));
     return res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao fazer login:', err);
@@ -650,12 +659,7 @@ app.put('/me', authenticateToken, async (req, res) => {
     if (!saved) return res.status(404).json({ error: 'Usuario nao encontrado' });
 
     if (emailChanged || newPassword) {
-      const token = jwt.sign(
-        { id: saved.id, email: saved.email, ver: saved.token_version || 1 },
-        JWT_SECRET,
-        { expiresIn: SESSION_JWT }
-      );
-      issueSession(res, token);
+      issueSession(res, signSession(saved));
     }
 
     return res.json({
@@ -906,6 +910,8 @@ app.post('/transactions/:id/move', authenticateToken, async (req, res) => {
 app.post('/transactions/:id/place', authenticateToken, async (req, res) => {
   const id = Number(req.params.id);
   const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
+  const rawDate = String(req.body?.date || '').slice(0, 10);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
   try {
     const result = await placeOwnedRow({
@@ -915,6 +921,7 @@ app.post('/transactions/:id/place', authenticateToken, async (req, res) => {
       beforeId: Number.isFinite(beforeId) ? beforeId : null,
       copyDate: true,
       dateCol: 'date',
+      date,
       orderSql: 'date DESC, rank DESC, id DESC',
     });
     if (result.missing) return res.status(404).json({ error: 'Transacao nao encontrada' });

@@ -1,4 +1,4 @@
-const CACHE = 'bg-finance-v93';
+const CACHE = 'bg-finance-v94';
 const SHELL = [
   '/login.html',
   '/logo.png',
@@ -30,16 +30,25 @@ self.addEventListener('fetch', (event) => {
   const isApp = url.pathname === '/' || url.pathname.endsWith('/index.html');
   const isPage = isApp || url.pathname.endsWith('.html') || url.pathname.endsWith('sw.js');
   if (isPage) {
-    event.respondWith(
-      fetch(request, { cache: 'no-store', redirect: 'follow' })
-        .then((response) => {
-          if (isApp && (!response.ok || new URL(response.url).pathname.endsWith('login.html'))) {
-            return caches.match('/login.html').then((cached) => cached || response);
-          }
-          return response;
-        })
-        .catch(() => caches.match('/login.html'))
-    );
+    event.respondWith((async () => {
+      const load = () => fetch(request, { cache: 'no-store', redirect: 'follow' });
+      let response;
+      try {
+        response = await load();
+        if (isApp && (!response.ok || response.status >= 500)) {
+          await new Promise((done) => setTimeout(done, 1200));
+          response = await load();
+        }
+      } catch {
+        try {
+          await new Promise((done) => setTimeout(done, 1500));
+          response = await load();
+        } catch {
+          return (isApp ? null : await caches.match('/login.html')) || Response.error();
+        }
+      }
+      return response;
+    })());
     return;
   }
 
