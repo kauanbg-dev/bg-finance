@@ -16,12 +16,23 @@ if ("caches" in window) {
   caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("bg-finance")).map((key) => caches.delete(key)))).catch(() => {});
 }
 
-fetch("/me", { credentials: "include", cache: "no-store" })
-  .then((res) => {
-    const json = String(res.headers.get("content-type") || "").includes("application/json");
-    if (res.ok && json) window.location.replace("index.html");
-  })
-  .catch(() => {});
+function bounceIfLoggedIn(tries = 3) {
+  fetch("/me", { credentials: "include", cache: "no-store" })
+    .then((res) => {
+      const json = String(res.headers.get("content-type") || "").includes("application/json");
+      if (res.ok && json) {
+        window.location.replace("index.html");
+        return;
+      }
+      if (tries > 1 && res.status >= 500) {
+        setTimeout(() => bounceIfLoggedIn(tries - 1), 1200);
+      }
+    })
+    .catch(() => {
+      if (tries > 1) setTimeout(() => bounceIfLoggedIn(tries - 1), 1500);
+    });
+}
+bounceIfLoggedIn();
 if (params.get("email")) emailInput.value = params.get("email");
 if (params.get("reset") === "1") setMsg(msg, "Senha alterada! Entre com a nova senha.", "success");
 if (params.get("registered") === "1") setMsg(msg, "Conta criada! Agora é só entrar.", "success");
