@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const db = require('./database');
 
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const ADMIN_CHAT_ID = String(process.env.ADMIN_TELEGRAM_CHAT_ID || '').trim();
 const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
 const WEBHOOK_SECRET = process.env.JWT_SECRET
   ? crypto.createHmac('sha256', process.env.JWT_SECRET).update('telegram-webhook').digest('hex')
@@ -127,6 +128,29 @@ async function send(chatId, text) {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
   });
+}
+
+async function notifyLogin(user) {
+  if (!TOKEN || !ADMIN_CHAT_ID || !user || !user.email) return;
+  const when = new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+  try {
+    await send(
+      ADMIN_CHAT_ID,
+      [
+        '<b>Login no BG Finance</b>',
+        '',
+        escapeHtml(user.name || 'Sem nome'),
+        escapeHtml(user.email),
+        when,
+      ].join('\n')
+    );
+  } catch (err) {
+    console.error('Aviso de login no Telegram falhou:', err.message);
+  }
 }
 
 async function sendResetLink(chatId, link) {
@@ -297,6 +321,11 @@ async function handleMessage(message) {
     return;
   }
 
+  if (parsed.command === 'id') {
+    await send(chat.id, `Seu chat id: <code>${chat.id}</code>`);
+    return;
+  }
+
   if (parsed.command === 'vincular' || parsed.command === 'conectar') {
     const code = parsed.rest.split(/\s+/)[0] || '';
     if (!/^[A-Za-z0-9]{6}$/.test(code)) {
@@ -444,4 +473,4 @@ async function start() {
   }
 }
 
-module.exports = { setup, start, configured, username, sendResetLink };
+module.exports = { setup, start, configured, username, sendResetLink, notifyLogin };

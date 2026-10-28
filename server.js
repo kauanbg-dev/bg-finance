@@ -514,6 +514,7 @@ async function login(req, res) {
     }
 
     issueSession(res, signSession(user));
+    telegram.notifyLogin(user);
     return res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao fazer login:', err);
