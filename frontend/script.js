@@ -4879,11 +4879,20 @@ function setCardColor(color) {
   const input = document.getElementById("card-color");
   const next = /^#[0-9a-fA-F]{6}$/.test(color || "") ? color : "#820ad1";
   if (input) input.value = next;
+  let preset = false;
   document.querySelectorAll("#card-form [data-color]").forEach((btn) => {
     const on = btn.dataset.color.toLowerCase() === next.toLowerCase();
+    if (on) preset = true;
     btn.classList.toggle("is-on", on);
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
+  const custom = document.getElementById("card-color-custom");
+  if (custom) {
+    custom.value = next.toLowerCase();
+    const wrap = custom.closest(".color-pick-custom");
+    wrap?.classList.toggle("is-on", !preset);
+    wrap?.style.setProperty("--swatch", next);
+  }
 }
 
 function setChargePaidFlag(paid) {
@@ -5379,6 +5388,7 @@ function bindCards() {
   document.querySelectorAll("#card-form [data-color]").forEach((btn) => {
     btn.addEventListener("click", () => setCardColor(btn.dataset.color));
   });
+  document.getElementById("card-color-custom")?.addEventListener("input", (event) => setCardColor(event.target.value));
   document.querySelector('[data-open-form="charge-form"]')?.addEventListener("click", () => {
     editingCharge = null;
     document.getElementById("charge-form")?.reset();
