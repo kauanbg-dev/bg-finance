@@ -44,12 +44,6 @@ if (params.get("registered") === "1") {
     setMsg(msg, "Conta criada! Agora é só entrar.", "success");
   }
 }
-if (params.get("verified") === "1") setMsg(msg, "E-mail confirmado! Agora é só entrar.", "success");
-if (params.get("verified") === "0") {
-  setMsg(msg, "Link de confirmação inválido ou vencido. Digite seu e-mail e peça outro.");
-  resendBtn.hidden = false;
-}
-
 let resending = false;
 resendBtn.addEventListener("click", async () => {
   if (resending) return;
