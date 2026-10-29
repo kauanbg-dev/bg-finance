@@ -30,6 +30,8 @@ No Render, configure as mesmas variáveis no painel do serviço. O arquivo `.env
 
 Para o "esqueci a senha" enviar e-mail de verdade, defina também `APP_URL` (endereço público do app), `MAIL_FROM` e a chave de um provedor: `BREVO_API_KEY` ([Brevo](https://brevo.com), aceita um Gmail verificado como remetente) ou `RESEND_API_KEY` ([Resend](https://resend.com), precisa de domínio próprio). Sem a chave, o link de redefinição aparece só no log do servidor.
 
+Com o provedor de e-mail configurado, quem cria conta recebe um link de confirmação (vale 24 horas) e só consegue entrar depois de clicar. Na tela de login dá para pedir o link de novo. Contas que já existiam antes dessa mudança ficam confirmadas. Sem `BREVO_API_KEY` nem `RESEND_API_KEY`, a confirmação fica desligada e o cadastro entra direto.
+
 ## Telegram
 
 Crie um bot no [@BotFather](https://t.me/BotFather) e coloque o token em `TELEGRAM_BOT_TOKEN`. O `APP_URL` precisa ser o endereço https do app (no Render, `https://bg-finance.onrender.com`). Na subida, o servidor registra o webhook sozinho.

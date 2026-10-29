@@ -111,7 +111,7 @@ function guardTraffic(req, res, next) {
   const route = req.path;
   const auth = route === '/auth/login' || route === '/login'
     || route === '/auth/register' || route === '/register'
-    || route === '/auth/forgot' || route === '/auth/reset';
+    || route === '/auth/forgot' || route === '/auth/reset' || route === '/auth/verify/resend';
   if (auth && rateLimited(`auth:${ip}`, 40, 15 * 60 * 1000)) return tooMany(res);
   if (route === '/telegram/webhook' && rateLimited(`tg:${ip}`, 120, 60 * 1000)) return tooMany(res);
   if (!auth && route !== '/telegram/webhook') {
@@ -317,12 +317,19 @@ async function register(req, res) {
   try {
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    await db.query(
-      'INSERT INTO users (name, email, password) VALUES ($1, $2, $3)',
-      [name, email, hash]
+    const created = await db.query(
+      'INSERT INTO users (name, email, password, email_verified_at) VALUES ($1, $2, $3, $4) RETURNING id',
+      [name, email, hash, MAIL_READY ? null : new Date()]
     );
 
-    return res.json({ ok: true });
+    if (!MAIL_READY) return res.json({ ok: true, verify: false });
+
+    try {
+      await sendVerification(created.rows[0].id, email, name);
+    } catch (mailErr) {
+      console.error('E-mail de confirmacao falhou:', mailErr.message);
+    }
+    return res.json({ ok: true, verify: true });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(400).json({ error: 'Email ja cadastrado' });
@@ -334,6 +341,7 @@ async function register(req, res) {
 }
 
 const RESET_TTL_MINUTES = 30;
+const VERIFY_TTL_HOURS = 24;
 const MAIL_READY = Boolean(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY);
 
 function hashToken(token) {
@@ -375,8 +383,12 @@ async function deliverEmail({ to, subject, html }) {
   return false;
 }
 
+function firstNameHtml(name) {
+  return (String(name || '').split(' ')[0] || 'Oi').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+}
+
 async function sendResetEmail(to, name, link) {
-  const firstName = (String(name || '').split(' ')[0] || 'Oi').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const firstName = firstNameHtml(name);
   const html = `
     <div style="font-family:Segoe UI,Arial,sans-serif;background:#0f172a;padding:32px;color:#e5e7eb">
       <div style="max-width:480px;margin:0 auto;background:#111c31;border-radius:16px;padding:28px;border:1px solid #1f2a44">
@@ -391,6 +403,84 @@ async function sendResetEmail(to, name, link) {
 
   const sent = await deliverEmail({ to, subject: 'Redefinir sua senha do BG Finance', html });
   if (!sent) throw new Error('Nenhum provedor de e-mail configurado (BREVO_API_KEY ou RESEND_API_KEY)');
+}
+
+async function sendVerification(userId, to, name) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await db.query('DELETE FROM email_verifications WHERE user_id = $1', [userId]);
+  await db.query(
+    `INSERT INTO email_verifications (user_id, token_hash, expires_at)
+     VALUES ($1, $2, NOW() + ($3 || ' hours')::interval)`,
+    [userId, hashToken(token), String(VERIFY_TTL_HOURS)]
+  );
+
+  const link = `${APP_URL}/auth/verify?token=${token}`;
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;background:#0f172a;padding:32px;color:#e5e7eb">
+      <div style="max-width:480px;margin:0 auto;background:#111c31;border-radius:16px;padding:28px;border:1px solid #1f2a44">
+        <h2 style="margin:0 0 12px;color:#93c5fd">BG Finance</h2>
+        <p>${firstNameHtml(name)}, falta só confirmar seu e-mail para começar a usar sua conta.</p>
+        <p style="margin:24px 0">
+          <a href="${link}" style="background:#3b82f6;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Confirmar e-mail</a>
+        </p>
+        <p style="color:#9ca3af;font-size:13px">O link vale por ${VERIFY_TTL_HOURS} horas. Se você não criou uma conta no BG Finance, ignore este e-mail.</p>
+      </div>
+    </div>`;
+
+  const sent = await deliverEmail({ to, subject: 'Confirme seu e-mail no BG Finance', html });
+  if (!sent) throw new Error('Nenhum provedor de e-mail configurado (BREVO_API_KEY ou RESEND_API_KEY)');
+}
+
+// The token stays valid until it expires, so a mail scanner opening the link first does not break the real click.
+async function verifyEmail(req, res) {
+  const token = String(req.query.token || '');
+  if (!token || rateLimited(`verify:${clientIp(req)}`, 20, 15 * 60 * 1000)) {
+    return res.redirect('/login.html?verified=0');
+  }
+
+  try {
+    const result = await db.query(
+      `UPDATE users u
+       SET email_verified_at = COALESCE(u.email_verified_at, NOW())
+       FROM email_verifications v
+       WHERE v.token_hash = $1 AND v.expires_at > NOW() AND v.user_id = u.id
+       RETURNING u.email`,
+      [hashToken(token)]
+    );
+    const row = result.rows[0];
+    if (!row) return res.redirect('/login.html?verified=0');
+    return res.redirect(`/login.html?verified=1&email=${encodeURIComponent(row.email)}`);
+  } catch (err) {
+    console.error('Erro ao confirmar e-mail:', err);
+    return res.redirect('/login.html?verified=0');
+  }
+}
+
+async function resendVerification(req, res) {
+  const email = String(req.body.email || '').trim().toLowerCase();
+
+  if (!email.includes('@')) {
+    return res.status(400).json({ error: 'Digite um e-mail valido' });
+  }
+
+  if (rateLimited(`verify-resend:${clientIp(req)}`, 5, 15 * 60 * 1000) || rateLimited(`verify-resend:${email}`, 3, 15 * 60 * 1000)) {
+    return tooMany(res);
+  }
+
+  if (!MAIL_READY) return res.json({ ok: true });
+
+  try {
+    const result = await db.query(
+      'SELECT id, name FROM users WHERE email = $1 AND email_verified_at IS NULL',
+      [email]
+    );
+    const user = result.rows[0];
+    if (user) await sendVerification(user.id, email, user.name);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Erro ao reenviar confirmacao de e-mail:', err);
+    return res.status(500).json({ error: 'Nao foi possivel enviar o e-mail agora. Tente mais tarde.' });
+  }
 }
 
 async function forgotPassword(req, res) {
@@ -473,7 +563,9 @@ async function resetPassword(req, res) {
 
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     await db.query(
-      'UPDATE users SET password = $1, token_version = token_version + 1 WHERE id = $2',
+      `UPDATE users
+       SET password = $1, token_version = token_version + 1, email_verified_at = COALESCE(email_verified_at, NOW())
+       WHERE id = $2`,
       [hash, row.user_id]
     );
     await db.query('DELETE FROM password_resets WHERE user_id = $1', [row.user_id]);
@@ -497,7 +589,7 @@ async function login(req, res) {
 
   try {
     const result = await db.query(
-      'SELECT id, name, email, password, token_version FROM users WHERE email = $1',
+      'SELECT id, name, email, password, token_version, email_verified_at FROM users WHERE email = $1',
       [email]
     );
 
@@ -511,6 +603,10 @@ async function login(req, res) {
 
     if (!valid) {
       return res.status(401).json({ error: 'Credenciais invalidas' });
+    }
+
+    if (MAIL_READY && !user.email_verified_at) {
+      return res.status(403).json({ error: 'Confirme seu e-mail antes de entrar' });
     }
 
     issueSession(res, signSession(user));
@@ -533,6 +629,8 @@ app.post('/auth/login', login);
 app.post('/login', login);
 app.post('/auth/forgot', forgotPassword);
 app.post('/auth/reset', resetPassword);
+app.get('/auth/verify', verifyEmail);
+app.post('/auth/verify/resend', resendVerification);
 app.post('/auth/logout', (req, res) => {
   clearSession(res);
   return res.json({ ok: true });
@@ -2124,6 +2222,7 @@ db.initDatabase()
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);
       console.log(MAIL_READY ? 'E-mail de senha: provedor configurado' : 'E-mail de senha: sem BREVO_API_KEY nem RESEND_API_KEY');
+      console.log(MAIL_READY ? 'Confirmacao de e-mail no cadastro: ligada' : 'Confirmacao de e-mail no cadastro: desligada (sem provedor de e-mail)');
       console.log(`APP_URL: ${APP_URL}`);
     });
   })

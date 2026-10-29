@@ -18,8 +18,9 @@ form.addEventListener("submit", async (e) => {
   setMsg(msg, "");
   setLoading(submitBtn, true, "Criando conta…");
   try {
-    await postJSON("/auth/register", { name, email, password });
-    window.location.href = `login.html?registered=1&email=${encodeURIComponent(email)}`;
+    const data = await postJSON("/auth/register", { name, email, password });
+    const verify = data.verify ? "&verify=1" : "";
+    window.location.href = `login.html?registered=1${verify}&email=${encodeURIComponent(email)}`;
   } catch (err) {
     setMsg(msg, err.message === "Email ja cadastrado" ? "Esse e-mail já tem conta. Que tal entrar?" : err.message);
     setLoading(submitBtn, false);
