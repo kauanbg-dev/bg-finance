@@ -94,6 +94,7 @@ async function initDatabase() {
   `);
 
   await pool.query(`ALTER TABLE cards ADD COLUMN IF NOT EXISTS color VARCHAR(7)`);
+  await pool.query(`ALTER TABLE cards ADD COLUMN IF NOT EXISTS nickname VARCHAR(40)`);
   await pool.query(`ALTER TABLE debts ADD COLUMN IF NOT EXISTS card_id INTEGER REFERENCES cards(id) ON DELETE SET NULL`);
 
   await pool.query(`

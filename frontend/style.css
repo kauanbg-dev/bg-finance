@@ -2925,6 +2925,7 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
 .plastic-top, .plastic-digits, .plastic-foot{ position: relative; z-index: 1; }
 .plastic-top{ display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .plastic-issuer{ font-size: 18px; font-weight: 800; letter-spacing: .02em; }
+.plastic-nickname{ display: block; margin-top: 2px; font-size: 12px; font-weight: 600; letter-spacing: .01em; opacity: .8; }
 .plastic-brand{ font-size: 13px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; opacity: .9; }
 .plastic.brand-visa .plastic-brand{ font-style: italic; letter-spacing: .18em; color: #f5d78e; }
 .plastic-chip{
