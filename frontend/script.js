@@ -5584,30 +5584,78 @@ window.addEventListener("pageshow", (event) => {
 
 /* ---------- controles customizados ---------- */
 
-function enhanceSelect(select, { colorize = false } = {}) {
+function enhanceSelect(select, { colorize = ["category", "category-filter", "edit-category", "save-category"].includes(select?.id) } = {}) {
   if (!select || select.dataset.enhanced) return;
   select.dataset.enhanced = "1";
   select.classList.add("native-field");
+  select.tabIndex = -1;
   const wrap = document.createElement("div");
   wrap.className = "menu-select";
   select.parentNode.insertBefore(wrap, select);
   wrap.appendChild(select);
 
+  const listId = `${select.id || `select-${Math.random().toString(36).slice(2, 8)}`}-menu`;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "menu-select-btn";
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
+  btn.setAttribute("aria-controls", listId);
+  const labelText = select.getAttribute("aria-label") || select.labels?.[0]?.textContent?.trim();
+  if (labelText) btn.setAttribute("aria-label", labelText);
+  if (select.id) {
+    select.labels?.forEach((label) => label.addEventListener("click", (event) => {
+      event.preventDefault();
+      btn.focus();
+    }));
+  }
   const menu = document.createElement("div");
   menu.className = "menu-select-list";
+  menu.id = listId;
+  menu.setAttribute("role", "listbox");
   wrap.append(btn, menu);
 
   const dotColor = (opt) => {
     if (!colorize || !opt.value) return "";
     return catColor(opt.textContent);
   };
+  const items = () => [...menu.querySelectorAll(".menu-select-item:not(:disabled)")];
+
+  function close({ focus = false } = {}) {
+    wrap.classList.remove("open", "drop-up");
+    btn.setAttribute("aria-expanded", "false");
+    if (focus) btn.focus();
+  }
+
+  function open() {
+    if (btn.disabled) return;
+    document.querySelectorAll(".menu-select.open, .month-picker.open").forEach((el) => {
+      if (el === wrap) return;
+      el.classList.remove("open", "drop-up");
+      el.querySelector(":scope > .menu-select-btn")?.setAttribute("aria-expanded", "false");
+    });
+    paint();
+    const room = window.innerHeight - btn.getBoundingClientRect().bottom;
+    wrap.classList.toggle("drop-up", room < 280 && btn.getBoundingClientRect().top > room);
+    wrap.classList.add("open");
+    btn.setAttribute("aria-expanded", "true");
+    const active = menu.querySelector(".menu-select-item.is-active") || items()[0];
+    active?.focus({ preventScroll: true });
+    active?.scrollIntoView({ block: "nearest" });
+  }
+
+  function choose(opt) {
+    if (select.value !== opt.value) {
+      select.value = opt.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    close({ focus: true });
+  }
 
   function paint() {
     const current = select.selectedOptions[0];
     const color = current ? dotColor(current) : "";
+    btn.disabled = select.disabled;
     btn.innerHTML = `<span class="menu-select-value">${color ? `<span class="menu-dot" style="--c:${color}"></span>` : ""}<span></span></span>${ICON.chevron}`;
     btn.querySelector(".menu-select-value > span:last-child").textContent = current ? current.textContent : "Selecionar";
     menu.innerHTML = "";
@@ -5615,18 +5663,25 @@ function enhanceSelect(select, { colorize = false } = {}) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "menu-select-item" + (opt.selected ? " is-active" : "");
-      const dot = document.createElement("span");
-      dot.className = "menu-dot";
-      const c = dotColor(opt);
-      if (c) dot.style.setProperty("--c", c);
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(opt.selected));
+      item.tabIndex = -1;
+      item.disabled = opt.disabled;
+      if (colorize) {
+        const dot = document.createElement("span");
+        dot.className = "menu-dot";
+        const c = dotColor(opt);
+        if (c) dot.style.setProperty("--c", c);
+        item.appendChild(dot);
+      }
       const label = document.createElement("span");
+      label.className = "menu-select-label";
       label.textContent = opt.textContent;
-      item.append(dot, label);
-      item.addEventListener("click", () => {
-        select.value = opt.value;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-        wrap.classList.remove("open");
-        paint();
+      item.appendChild(label);
+      if (opt.selected) item.insertAdjacentHTML("beforeend", `<span class="menu-select-check">${ICON.check}</span>`);
+      item.addEventListener("click", (event) => {
+        event.stopPropagation();
+        choose(opt);
       });
       menu.appendChild(item);
     });
@@ -5634,13 +5689,40 @@ function enhanceSelect(select, { colorize = false } = {}) {
 
   btn.addEventListener("click", (event) => {
     event.stopPropagation();
-    document.querySelectorAll(".menu-select.open, .month-picker.open").forEach((el) => {
-      if (el !== wrap) el.classList.remove("open");
-    });
-    wrap.classList.toggle("open");
+    if (wrap.classList.contains("open")) close();
+    else open();
   });
 
-  new MutationObserver(paint).observe(select, { childList: true });
+  btn.addEventListener("keydown", (event) => {
+    if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      open();
+    }
+  });
+
+  menu.addEventListener("keydown", (event) => {
+    const list = items();
+    const at = list.indexOf(document.activeElement);
+    const move = (index) => list[Math.max(0, Math.min(list.length - 1, index))]?.focus();
+    if (event.key === "ArrowDown") { event.preventDefault(); move(at + 1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); move(at - 1); }
+    else if (event.key === "Home") { event.preventDefault(); move(0); }
+    else if (event.key === "End") { event.preventDefault(); move(list.length - 1); }
+    else if (event.key === "Escape") { event.preventDefault(); close({ focus: true }); }
+    else if (event.key === "Tab") close();
+  });
+
+  // Code that sets .value or .selectedIndex directly fires no event, so the button would keep the old label.
+  for (const prop of ["value", "selectedIndex"]) {
+    const native = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, prop);
+    Object.defineProperty(select, prop, {
+      configurable: true,
+      get() { return native.get.call(this); },
+      set(next) { native.set.call(this, next); paint(); },
+    });
+  }
+
+  new MutationObserver(paint).observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "selected", "label"] });
   select.addEventListener("change", paint);
   paint();
 }
@@ -5748,20 +5830,16 @@ function enhanceMonth(input) {
 }
 
 function enhanceControls() {
-  enhanceSelect(categorySelect, { colorize: true });
-  enhanceSelect(categoryFilter, { colorize: true });
-  enhanceSelect(typeFilter);
-  enhanceSelect(editCategory, { colorize: true });
-  enhanceSelect(chartMode);
-  enhanceSelect(saveCategorySelect, { colorize: true });
-  enhanceSelect(mobileSort);
-  enhanceSelect(document.getElementById("debt-card"));
+  document.querySelectorAll("select").forEach((select) => enhanceSelect(select));
   enhanceMonth(monthFilter);
 }
 
 document.addEventListener("click", (e) => {
   if (e.target.closest(".month-panel")) return;
-  document.querySelectorAll(".menu-select.open, .month-picker.open").forEach((el) => el.classList.remove("open"));
+  document.querySelectorAll(".menu-select.open, .month-picker.open").forEach((el) => {
+    el.classList.remove("open", "drop-up");
+    el.querySelector(":scope > .menu-select-btn")?.setAttribute("aria-expanded", "false");
+  });
 });
 
 document.addEventListener("bg-theme", () => {
