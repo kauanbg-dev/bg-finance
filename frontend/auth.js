@@ -66,6 +66,7 @@ async function postJSON(url, body) {
 }
 
 function passwordScore(pw) {
+  if (pw && typeof passwordProblem === "function" && passwordProblem(pw)) return 1;
   let score = 0;
   if (pw.length >= 8) score++;
   if (pw.length >= 10) score++;

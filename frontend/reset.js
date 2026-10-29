@@ -17,7 +17,8 @@ form.addEventListener("submit", async (e) => {
   const password = document.getElementById("password").value;
   const confirm = document.getElementById("confirm").value;
 
-  if (password.length < 10) return setMsg(msg, "A senha deve ter pelo menos 10 caracteres.");
+  const problem = passwordProblem(password);
+  if (problem) return setMsg(msg, problem);
   if (password !== confirm) return setMsg(msg, "As senhas não coincidem.");
 
   setMsg(msg, "");
