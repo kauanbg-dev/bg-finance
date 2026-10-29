@@ -39,3 +39,5 @@ Crie um bot no [@BotFather](https://t.me/BotFather) e coloque o token em `TELEGR
 No app, em Ajustes, a pessoa gera um código e envia `/vincular CODIGO` para o bot. Depois disso valem `/saldo`, `/dividas`, `/gasto 49,90 mercado` e `/receita 1500 salario`.
 
 Para receber um aviso privado a cada login, mande `/id` para o bot e coloque o número em `ADMIN_TELEGRAM_CHAT_ID` no Render. Só esse chat recebe nome, e-mail e horário. O mesmo chat é avisado quando uma conta leva 5 senhas erradas em 15 minutos. Sem a variável, o login segue normal e ninguém é avisado.
+
+Quem vinculou o Telegram recebe, uma vez por dia a partir das 8h, um lembrete das dívidas e assinaturas que vencem hoje, amanhã ou atrasaram na última semana. `/lembretes off` desliga e `/lembretes on` liga de novo. Como o Render grátis dorme sem uso, o workflow `.github/workflows/telegram-reminders.yml` chama o servidor todo dia às 8h05 de Brasília: defina o mesmo valor em `CRON_SECRET` no Render e no secret `CRON_SECRET` do repositório no GitHub.
