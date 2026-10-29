@@ -10,6 +10,7 @@ const path = require('path');
 
 const db = require('./database');
 const telegram = require('./telegram');
+const { passwordProblem } = require('./frontend/password-policy');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -78,7 +79,6 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET nao definida no .env');
 }
 
-const MIN_PASSWORD = 10;
 const BCRYPT_ROUNDS = 12;
 const SESSION_COOKIE = 'bg_session';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -310,8 +310,9 @@ async function register(req, res) {
     return tooMany(res);
   }
 
-  if (password.length < MIN_PASSWORD) {
-    return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
+  const problem = passwordProblem(password, { name, email });
+  if (problem) {
+    return res.status(400).json({ error: problem });
   }
 
   try {
@@ -540,8 +541,8 @@ async function resetPassword(req, res) {
   const token = String(req.body.token || '');
   const password = String(req.body.password || '');
 
-  if (!token || password.length < MIN_PASSWORD) {
-    return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
+  if (!token) {
+    return res.status(400).json({ error: 'Link invalido ou expirado. Peca um novo.' });
   }
 
   if (rateLimited(`reset:${clientIp(req)}`, 8, 15 * 60 * 1000)) {
@@ -549,6 +550,21 @@ async function resetPassword(req, res) {
   }
 
   try {
+    const pending = await db.query(
+      `SELECT u.name, u.email
+       FROM password_resets r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.token_hash = $1 AND r.used_at IS NULL AND r.expires_at > NOW()`,
+      [hashToken(token)]
+    );
+    if (!pending.rows[0]) {
+      return res.status(400).json({ error: 'Link invalido ou expirado. Peca um novo.' });
+    }
+    const problem = passwordProblem(password, pending.rows[0]);
+    if (problem) {
+      return res.status(400).json({ error: problem });
+    }
+
     const result = await db.query(
       `UPDATE password_resets
        SET used_at = NOW()
@@ -698,10 +714,6 @@ app.put('/me', authenticateToken, async (req, res) => {
     }
   }
 
-  if (newPassword && newPassword.length < MIN_PASSWORD) {
-    return res.status(400).json({ error: `Senha muito curta (min. ${MIN_PASSWORD} caracteres)` });
-  }
-
   try {
     const found = await db.query(
       'SELECT id, name, email, password, avatar, token_version, created_at FROM users WHERE id = $1',
@@ -716,6 +728,14 @@ app.put('/me', authenticateToken, async (req, res) => {
       if (!currentPassword) return res.status(400).json({ error: 'Informe a senha atual' });
       const valid = await bcrypt.compare(currentPassword, user.password);
       if (!valid) return res.status(400).json({ error: 'Senha atual incorreta' });
+    }
+
+    if (newPassword) {
+      const problem = passwordProblem(newPassword, { name: name || user.name, email: email || user.email });
+      if (problem) return res.status(400).json({ error: problem });
+      if (newPassword === currentPassword) {
+        return res.status(400).json({ error: 'A nova senha precisa ser diferente da atual' });
+      }
     }
 
     const sets = [];

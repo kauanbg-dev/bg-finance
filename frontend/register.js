@@ -12,7 +12,8 @@ form.addEventListener("submit", async (e) => {
 
   if (!name) return setMsg(msg, "Digite seu nome.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setMsg(msg, "Digite um e-mail válido.");
-  if (password.length < 10) return setMsg(msg, "A senha deve ter pelo menos 10 caracteres.");
+  const problem = passwordProblem(password, { name, email });
+  if (problem) return setMsg(msg, problem);
   if (password !== confirm) return setMsg(msg, "As senhas não coincidem.");
 
   setMsg(msg, "");

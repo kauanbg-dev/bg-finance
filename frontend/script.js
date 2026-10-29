@@ -1148,8 +1148,9 @@ profileForm?.addEventListener("submit", async (event) => {
     toast("Digite um e-mail válido", "error");
     return;
   }
-  if (newPassword && newPassword.length < 10) {
-    toast("A nova senha precisa ter pelo menos 10 caracteres", "error");
+  const passwordIssue = newPassword ? passwordProblem(newPassword, { name, email }) : "";
+  if (passwordIssue) {
+    toast(passwordIssue, "error");
     return;
   }
   if (newPassword && newPassword !== confirm) {
