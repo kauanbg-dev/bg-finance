@@ -33,8 +33,9 @@
           <div class="auth-badge success">
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
           </div>
-          <h1 class="auth-title">E-mail confirmado!</h1>
-          <p class="auth-subtitle">Tudo certo<span id="ok-email-wrap" class="hidden">, <strong id="ok-email"></strong> foi confirmado</span>. Sua conta no BG Finance já está pronta para usar.</p>
+          <h1 class="auth-title" id="ok-title">E-mail confirmado!</h1>
+          <p class="auth-subtitle" id="ok-text">Tudo certo<span id="ok-email-wrap" class="hidden">, <strong id="ok-email"></strong> foi confirmado</span>. Sua conta no BG Finance já está pronta para usar.</p>
+          <p class="auth-subtitle hidden" id="ok-change-text">Agora você entra com <strong id="ok-change-email"></strong>. Por segurança, saímos da sua conta em todos os aparelhos.</p>
           <a class="btn primary full btn-link" id="login-btn" href="./login.html">Entrar na minha conta</a>
         </div>
 
@@ -43,7 +44,8 @@
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
           </div>
           <h1 class="auth-title">Link inválido ou vencido</h1>
-          <p class="auth-subtitle">Esse link de confirmação não vale mais. Digite o e-mail da conta e enviamos um novo.</p>
+          <p class="auth-subtitle" id="invalid-text">Esse link de confirmação não vale mais. Digite o e-mail da conta e enviamos um novo.</p>
+          <p class="auth-subtitle hidden" id="invalid-change-text">Esse link de troca de e-mail não vale mais. Entre na sua conta e peça a troca de novo no perfil.</p>
 
           <form id="resend-form" class="auth-form" novalidate>
             <div class="field">
@@ -69,7 +71,7 @@
   </main>
 
   <script src="auth.js?v=67"></script>
-  <script src="verified.js?v=1"></script>
+  <script src="verified.js?v=2"></script>
   <script src="theme.js"></script>
   <script src="pwa.js?v=66"></script>
 </body>

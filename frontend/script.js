@@ -1171,7 +1171,9 @@ profileForm?.addEventListener("submit", async (event) => {
     });
     setAccount(saved || { name, email });
     closeProfileModal();
-    toast("Cadastro atualizado");
+    toast(saved?.pending_email
+      ? `Enviamos um link para ${saved.pending_email}. O e-mail só muda depois que você confirmar.`
+      : "Cadastro atualizado");
   } catch (err) {
     toast(err.message || "Não foi possível salvar o cadastro", "error");
   }
