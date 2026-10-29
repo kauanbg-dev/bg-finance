@@ -700,7 +700,7 @@ async function login(req, res) {
 
   try {
     const result = await db.query(
-      'SELECT id, name, email, password, token_version, email_verified_at FROM users WHERE email = $1',
+      'SELECT id, name, email, password, token_version, email_verified_at, telegram_chat_id FROM users WHERE email = $1',
       [email]
     );
 
@@ -723,12 +723,200 @@ async function login(req, res) {
       return res.status(403).json({ error: 'Confirme seu e-mail antes de entrar' });
     }
 
-    issueSession(res, signSession(user));
-    telegram.notifyLogin(user);
+    finishLogin(req, res, user);
     return res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao fazer login:', err);
     return res.status(500).json({ error: 'Erro no servidor' });
+  }
+}
+
+const DEVICE_COOKIE = 'bg_device';
+const DEVICE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+
+function deviceLabel(userAgent) {
+  const ua = String(userAgent || '');
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\/|Opera/.test(ua) ? 'Opera'
+      : /SamsungBrowser/.test(ua) ? 'Samsung Internet'
+        : /Firefox\//.test(ua) ? 'Firefox'
+          : /Chrome\//.test(ua) ? 'Chrome'
+            : /Safari\//.test(ua) ? 'Safari'
+              : 'Navegador';
+  const system = /iPhone/.test(ua) ? 'iPhone'
+    : /iPad/.test(ua) ? 'iPad'
+      : /Android/.test(ua) ? 'Android'
+        : /Windows/.test(ua) ? 'Windows'
+          : /Macintosh|Mac OS X/.test(ua) ? 'Mac'
+            : /Linux/.test(ua) ? 'Linux'
+              : 'sistema desconhecido';
+  return `${browser} no ${system}`;
+}
+
+function deviceId(req, res) {
+  let id = cookieValue(req, DEVICE_COOKIE);
+  if (!/^[A-Za-z0-9_-]{32,64}$/.test(id)) id = crypto.randomBytes(24).toString('base64url');
+  res.cookie(DEVICE_COOKIE, id, { ...sessionCookie(), maxAge: DEVICE_MS });
+  return id;
+}
+
+async function checkNewDevice(user, device, ip, userAgent) {
+  const ua = String(userAgent || '').slice(0, 300);
+  const hash = hashToken(device);
+  const before = await db.query('SELECT COUNT(*)::int AS total FROM user_devices WHERE user_id = $1', [user.id]);
+  const added = await db.query(
+    `INSERT INTO user_devices (user_id, device_hash, user_agent, ip)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id, device_hash) DO NOTHING
+     RETURNING id`,
+    [user.id, hash, ua, ip]
+  );
+  if (!added.rows[0]) {
+    await db.query(
+      'UPDATE user_devices SET last_seen = NOW(), ip = $3, user_agent = $4 WHERE user_id = $1 AND device_hash = $2',
+      [user.id, hash, ip, ua]
+    );
+    return;
+  }
+  // The first device an account ever records has nothing to compare against, so it is not "new".
+  if (!before.rows[0].total) return;
+
+  const label = deviceLabel(ua);
+  const when = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
+  const link = `${APP_URL}/forgot.html?email=${encodeURIComponent(user.email)}`;
+  if (user.telegram_chat_id) {
+    telegram.sendNewDeviceAlert(user.telegram_chat_id, { device: label, when, ip, link })
+      .catch((err) => console.error('Aviso de aparelho novo no Telegram falhou:', err.message));
+  }
+  if (MAIL_READY) {
+    deliverEmail({
+      to: user.email,
+      subject: 'Novo acesso à sua conta no BG Finance',
+      html: emailCard(`
+        <p>${firstNameHtml(user.name)}, alguém entrou na sua conta de um aparelho novo.</p>
+        <p style="margin:16px 0;padding:12px 14px;background:#0f172a;border-radius:10px;font-size:14px">
+          <strong>${escapeHtml(label)}</strong><br>${escapeHtml(when)} · IP ${escapeHtml(ip)}
+        </p>
+        <p>Se foi você, pode ignorar este e-mail.</p>
+        <p style="margin:24px 0">
+          <a href="${link}" style="background:#ef4444;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Não fui eu, trocar senha</a>
+        </p>`),
+    }).catch((err) => console.error('Aviso de aparelho novo por e-mail falhou:', err.message));
+  }
+}
+
+function finishLogin(req, res, user) {
+  issueSession(res, signSession(user));
+  telegram.notifyLogin(user);
+  const device = deviceId(req, res);
+  checkNewDevice(user, device, clientIp(req), req.get('user-agent'))
+    .catch((err) => console.error('Checagem de aparelho novo falhou:', err.message));
+}
+
+const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
+const GOOGLE_READY = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+const GOOGLE_STATE_COOKIE = 'bg_google_state';
+const GOOGLE_REDIRECT = `${APP_URL}/auth/google/callback`;
+
+function sameSecret(a, b) {
+  const left = Buffer.from(String(a || ''));
+  const right = Buffer.from(String(b || ''));
+  return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function startGoogle(req, res) {
+  if (!GOOGLE_READY) return res.redirect('/login.html?google=off');
+  const state = crypto.randomBytes(24).toString('base64url');
+  res.cookie(GOOGLE_STATE_COOKIE, state, { ...sessionCookie(), maxAge: 10 * 60 * 1000 });
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    prompt: 'select_account',
+  });
+  return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+}
+
+async function googleUser(sub, email, name) {
+  const fields = 'id, name, email, token_version, telegram_chat_id';
+  const bySub = await db.query(`SELECT ${fields} FROM users WHERE google_sub = $1`, [sub]);
+  if (bySub.rows[0]) return bySub.rows[0];
+
+  const filler = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
+  // An unconfirmed account with this e-mail may have been created by someone else, so its password
+  // and sessions are dropped before Google proves who owns the address.
+  const linked = await db.query(
+    `UPDATE users
+     SET google_sub = $1,
+         password = CASE WHEN email_verified_at IS NULL THEN $3 ELSE password END,
+         token_version = CASE WHEN email_verified_at IS NULL THEN token_version + 1 ELSE token_version END,
+         email_verified_at = COALESCE(email_verified_at, NOW())
+     WHERE email = $2 AND google_sub IS NULL
+     RETURNING ${fields}`,
+    [sub, email, filler]
+  );
+  if (linked.rows[0]) return linked.rows[0];
+
+  const created = await db.query(
+    `INSERT INTO users (name, email, password, email_verified_at, google_sub)
+     VALUES ($1, $2, $3, NOW(), $4)
+     RETURNING ${fields}`,
+    [(name || email.split('@')[0]).slice(0, 80), email, filler, sub]
+  );
+  return created.rows[0];
+}
+
+async function googleCallback(req, res) {
+  const fail = (reason) => res.redirect(`/login.html?google=${reason}`);
+  const expected = cookieValue(req, GOOGLE_STATE_COOKIE);
+  res.clearCookie(GOOGLE_STATE_COOKIE, { ...sessionCookie(), maxAge: 0 });
+
+  if (!GOOGLE_READY) return fail('off');
+  if (req.query.error) return fail('cancelado');
+  if (!req.query.code || !sameSecret(req.query.state, expected)) return fail('erro');
+  if (rateLimited(`google:${clientIp(req)}`, 20, 15 * 60 * 1000)) return fail('erro');
+
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: String(req.query.code),
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokens = await response.json().catch(() => ({}));
+    if (!response.ok || !tokens.id_token) {
+      console.error('Google recusou o codigo de login:', tokens.error || response.status);
+      return fail('erro');
+    }
+
+    // The ID token came straight from Google's token endpoint over TLS, so reading its claims is enough.
+    let profile;
+    try {
+      profile = JSON.parse(Buffer.from(String(tokens.id_token).split('.')[1], 'base64url').toString('utf8'));
+    } catch {
+      return fail('erro');
+    }
+    const issuerOk = profile.iss === 'accounts.google.com' || profile.iss === 'https://accounts.google.com';
+    if (!issuerOk || profile.aud !== GOOGLE_CLIENT_ID || !profile.sub) return fail('erro');
+
+    const email = String(profile.email || '').trim().toLowerCase();
+    const verified = profile.email_verified === true || profile.email_verified === 'true';
+    if (!email || !verified) return fail('email');
+
+    const user = await googleUser(String(profile.sub), email, String(profile.name || '').trim());
+    finishLogin(req, res, user);
+    return res.redirect('/');
+  } catch (err) {
+    console.error('Erro no login com Google:', err);
+    return fail('erro');
   }
 }
 
@@ -746,6 +934,9 @@ app.post('/auth/reset', resetPassword);
 app.get('/auth/verify', verifyEmail);
 app.post('/auth/verify/resend', resendVerification);
 app.get('/auth/email-change', confirmEmailChange);
+app.get('/auth/providers', (req, res) => res.json({ google: GOOGLE_READY }));
+app.get('/auth/google', startGoogle);
+app.get('/auth/google/callback', googleCallback);
 app.post('/auth/logout', (req, res) => {
   clearSession(res);
   return res.json({ ok: true });

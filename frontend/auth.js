@@ -90,6 +90,14 @@ document.querySelectorAll("[data-toggle-password]").forEach((btn) => {
   paint();
 });
 
+const googleArea = document.getElementById("google-area");
+if (googleArea) {
+  fetch("/auth/providers", { cache: "no-store" })
+    .then((res) => (res.ok ? res.json() : {}))
+    .then((data) => { if (data.google) googleArea.classList.remove("hidden"); })
+    .catch(() => {});
+}
+
 document.querySelectorAll("[data-strength]").forEach((input) => {
   const meter = document.getElementById(input.dataset.strength);
   const labels = ["", "Fraca", "Razoável", "Boa", "Forte"];
