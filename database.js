@@ -35,6 +35,8 @@ async function initDatabase() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_chat_id_key ON users (telegram_chat_id) WHERE telegram_chat_id IS NOT NULL`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_reminders BOOLEAN NOT NULL DEFAULT TRUE`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_reminded_on DATE`);
   // The default only fills rows that existed before the column, so old accounts stay able to log in.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW()`);
   await pool.query(`ALTER TABLE users ALTER COLUMN email_verified_at DROP DEFAULT`);

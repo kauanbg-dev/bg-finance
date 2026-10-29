@@ -1,0 +1,26 @@
+name: Lembretes do Telegram
+
+on:
+  schedule:
+    # 11:05 UTC = 8:05 em Brasília
+    - cron: "5 11 * * *"
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar lembretes
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://bg-finance.onrender.com' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Defina o secret CRON_SECRET no repositório."
+            exit 1
+          fi
+          # O Render grátis pode estar dormindo: as tentativas dão tempo para ele acordar.
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 20 --retry-all-errors --max-time 90 \
+            -X POST -H "x-cron-secret: $CRON_SECRET" \
+            "$APP_URL/telegram/reminders"

@@ -192,8 +192,99 @@ function helpText() {
     '<code>/extrato</code> últimos lançamentos',
     '<code>/gasto 49,90 mercado</code>',
     '<code>/receita 1500 salario</code>',
+    '<code>/lembretes</code> aviso diário de contas a vencer',
     '<code>/desvincular</code>',
   ].join('\n');
+}
+
+const REMINDER_HOUR = 8;
+const REMINDER_LATE_DAYS = 7;
+
+function hourSaoPaulo() {
+  return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false })) % 24;
+}
+
+function shortDay(iso) {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+}
+
+function reminderText(items, today) {
+  const late = items.filter((item) => item.due_date < today);
+  const now = items.filter((item) => item.due_date === today);
+  const soon = items.filter((item) => item.due_date > today);
+  const line = (item) => {
+    const label = item.kind === 'sub' ? ' (assinatura)' : '';
+    const when = item.due_date < today ? ` — venceu ${shortDay(item.due_date)}` : '';
+    return `• ${escapeHtml(item.name)}${label}: ${money(item.amount)}${when}`;
+  };
+  const blocks = [['Atrasadas', late], ['Vencem hoje', now], ['Vencem amanhã', soon]]
+    .filter(([, list]) => list.length)
+    .map(([title, list]) => [`<b>${title}</b>`, ...list.map(line)].join('\n'));
+  return ['<b>Lembrete de contas</b>', '', blocks.join('\n\n'), '', 'Para parar estes avisos, mande <code>/lembretes off</code>.'].join('\n');
+}
+
+async function runReminders() {
+  if (!ready) return { sent: 0 };
+  const today = todaySaoPaulo();
+  const result = await db.query(
+    `SELECT u.id AS user_id, u.telegram_chat_id, x.kind, x.name, x.amount, x.due_date::text AS due_date
+     FROM users u
+     JOIN (
+       SELECT user_id, 'debt' AS kind, name, amount, due_date FROM debts
+       WHERE paid_at IS NULL AND due_date IS NOT NULL
+       UNION ALL
+       SELECT user_id, 'sub' AS kind, name, amount, due_date FROM subscriptions
+       WHERE active AND due_date IS NOT NULL
+     ) x ON x.user_id = u.id
+     WHERE u.telegram_chat_id IS NOT NULL
+       AND u.telegram_reminders
+       AND u.telegram_reminded_on IS DISTINCT FROM $1::date
+       AND x.due_date BETWEEN $1::date - $2::int AND $1::date + 1
+     ORDER BY u.id, x.due_date, x.name`,
+    [today, REMINDER_LATE_DAYS]
+  );
+
+  const byUser = new Map();
+  for (const row of result.rows) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, { chatId: row.telegram_chat_id, items: [] });
+    byUser.get(row.user_id).items.push(row);
+  }
+
+  let sent = 0;
+  for (const [userId, { chatId, items }] of byUser) {
+    const claimed = await db.query(
+      `UPDATE users SET telegram_reminded_on = $1::date
+       WHERE id = $2 AND telegram_reminded_on IS DISTINCT FROM $1::date
+       RETURNING id`,
+      [today, userId]
+    );
+    if (!claimed.rows[0]) continue;
+    try {
+      await send(chatId, reminderText(items, today));
+      sent += 1;
+    } catch (err) {
+      console.error(`Lembrete do Telegram falhou para o usuario ${userId}:`, err.message);
+    }
+    await new Promise((done) => setTimeout(done, 60));
+  }
+  return { sent };
+}
+
+function scheduleReminders() {
+  const tick = () => {
+    if (hourSaoPaulo() < REMINDER_HOUR) return;
+    runReminders().catch((err) => console.error('Lembretes do Telegram falharam:', err.message));
+  };
+  tick();
+  setInterval(tick, 60 * 60 * 1000).unref();
+}
+
+function cronSecretOk(header) {
+  const expected = String(process.env.CRON_SECRET || '');
+  if (!expected || !header) return false;
+  const got = Buffer.from(String(header));
+  const want = Buffer.from(expected);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
 function codeHash(code) {
@@ -357,6 +448,20 @@ async function handleMessage(message) {
     await send(chat.id, 'Conta desvinculada deste chat.');
     return;
   }
+  if (parsed.command === 'lembretes' || parsed.command === 'lembrete') {
+    const arg = parsed.rest.toLowerCase().split(/\s+/)[0] || '';
+    const turnOn = ['on', 'ligar', 'sim'].includes(arg);
+    const turnOff = ['off', 'desligar', 'nao', 'não'].includes(arg);
+    if (turnOn || turnOff) {
+      await db.query('UPDATE users SET telegram_reminders = $1 WHERE id = $2', [turnOn, user.id]);
+    }
+    const state = await db.query('SELECT telegram_reminders FROM users WHERE id = $1', [user.id]);
+    const on = Boolean(state.rows[0]?.telegram_reminders);
+    await send(chat.id, on
+      ? `Lembretes <b>ligados</b>. Todo dia, a partir das ${REMINDER_HOUR}h, aviso o que vence hoje, amanhã e o que atrasou na última semana.\n\nPara parar: <code>/lembretes off</code>`
+      : 'Lembretes <b>desligados</b>.\n\nPara voltar: <code>/lembretes on</code>');
+    return;
+  }
   if (parsed.command === 'saldo' || parsed.command === 'resumo') {
     await send(chat.id, await monthSummary(user.id));
     return;
@@ -444,6 +549,19 @@ function setup(app, authenticateToken) {
     }
   });
 
+  app.post('/telegram/reminders', async (req, res) => {
+    if (!cronSecretOk(req.get('x-cron-secret'))) {
+      return res.status(404).json({ error: 'Nao encontrado' });
+    }
+    try {
+      const result = await runReminders();
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('Lembretes do Telegram falharam:', err);
+      return res.status(500).json({ error: 'Erro ao enviar lembretes' });
+    }
+  });
+
   app.post('/telegram/webhook', async (req, res) => {
     if (!TOKEN || !secretOk(req.get('x-telegram-bot-api-secret-token'))) {
       return res.status(404).json({ error: 'Nao encontrado' });
@@ -466,6 +584,7 @@ async function start() {
     const me = await api('getMe');
     botUsername = me.username || '';
     ready = true;
+    scheduleReminders();
     if (APP_URL.startsWith('https://')) {
       await api('setWebhook', {
         url: `${APP_URL}/telegram/webhook`,
