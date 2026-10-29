@@ -1,5 +1,16 @@
 const params = new URLSearchParams(location.search);
 const email = params.get("email") || "";
+const isChange = params.get("kind") === "change";
+
+if (isChange) {
+  document.getElementById("ok-title").textContent = "E-mail alterado!";
+  document.getElementById("ok-text").classList.add("hidden");
+  document.getElementById("ok-change-text").classList.remove("hidden");
+  document.getElementById("ok-change-email").textContent = email;
+  document.getElementById("invalid-text").classList.add("hidden");
+  document.getElementById("invalid-change-text").classList.remove("hidden");
+  document.getElementById("resend-form").classList.add("hidden");
+}
 
 if (params.get("status") === "ok") {
   if (email) {

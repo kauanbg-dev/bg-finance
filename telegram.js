@@ -130,7 +130,7 @@ async function send(chatId, text) {
   });
 }
 
-async function notifyLogin(user) {
+async function notifyAdmin(title, user, extra = []) {
   if (!TOKEN || !ADMIN_CHAT_ID || !user || !user.email) return;
   const when = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -141,16 +141,25 @@ async function notifyLogin(user) {
     await send(
       ADMIN_CHAT_ID,
       [
-        '<b>Login no BG Finance</b>',
+        `<b>${title}</b>`,
         '',
         escapeHtml(user.name || 'Sem nome'),
         escapeHtml(user.email),
         when,
+        ...extra.map(escapeHtml),
       ].join('\n')
     );
   } catch (err) {
-    console.error('Aviso de login no Telegram falhou:', err.message);
+    console.error('Aviso no Telegram falhou:', err.message);
   }
+}
+
+function notifyLogin(user) {
+  return notifyAdmin('Login no BG Finance', user);
+}
+
+function notifyFailedLogins(user, count, ip) {
+  return notifyAdmin('Senha errada várias vezes', user, [`${count} tentativas erradas em 15 minutos`, `IP: ${ip}`]);
 }
 
 async function sendResetLink(chatId, link) {
@@ -473,4 +482,4 @@ async function start() {
   }
 }
 
-module.exports = { setup, start, configured, username, sendResetLink, notifyLogin };
+module.exports = { setup, start, configured, username, sendResetLink, notifyLogin, notifyFailedLogins };

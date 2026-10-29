@@ -84,6 +84,9 @@ const SESSION_COOKIE = 'bg_session';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_JWT = '7d';
 const attempts = new Map();
+const failedLogins = new Map();
+const FAILED_LOGIN_ALERT = 5;
+const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 function clientIp(req) {
   return String(req.ip || req.socket?.remoteAddress || 'unknown');
@@ -173,7 +176,24 @@ setInterval(() => {
   for (const [key, bucket] of attempts) {
     if (bucket.start < cutoff) attempts.delete(key);
   }
+  for (const [key, entry] of failedLogins) {
+    if (entry.start < cutoff) failedLogins.delete(key);
+  }
 }, 10 * 60 * 1000).unref();
+
+function noteFailedLogin(user, ip) {
+  const now = Date.now();
+  let entry = failedLogins.get(user.id);
+  if (!entry || now - entry.start >= FAILED_LOGIN_WINDOW_MS) {
+    entry = { start: now, count: 0, alerted: false };
+    failedLogins.set(user.id, entry);
+  }
+  entry.count += 1;
+  if (entry.count >= FAILED_LOGIN_ALERT && !entry.alerted) {
+    entry.alerted = true;
+    telegram.notifyFailedLogins(user, entry.count, ip);
+  }
+}
 
 async function authenticateToken(req, res, next) {
   const header = req.headers.authorization;
@@ -484,6 +504,81 @@ async function resendVerification(req, res) {
   }
 }
 
+function emailCard(body) {
+  return `
+    <div style="font-family:Segoe UI,Arial,sans-serif;background:#0f172a;padding:32px;color:#e5e7eb">
+      <div style="max-width:480px;margin:0 auto;background:#111c31;border-radius:16px;padding:28px;border:1px solid #1f2a44">
+        <h2 style="margin:0 0 12px;color:#93c5fd">BG Finance</h2>
+        ${body}
+      </div>
+    </div>`;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+}
+
+async function sendEmailChange(userId, newEmail, name) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await db.query('DELETE FROM email_changes WHERE user_id = $1', [userId]);
+  await db.query(
+    `INSERT INTO email_changes (user_id, new_email, token_hash, expires_at)
+     VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::interval)`,
+    [userId, newEmail, hashToken(token), String(VERIFY_TTL_HOURS)]
+  );
+
+  const link = `${APP_URL}/auth/email-change?token=${token}`;
+  const html = emailCard(`
+        <p>${firstNameHtml(name)}, recebemos um pedido para usar este e-mail na sua conta do BG Finance.</p>
+        <p style="margin:24px 0">
+          <a href="${link}" style="background:#3b82f6;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Confirmar novo e-mail</a>
+        </p>
+        <p style="color:#9ca3af;font-size:13px">O link vale por ${VERIFY_TTL_HOURS} horas. Até lá, a conta continua com o e-mail antigo. Se não foi você, ignore este e-mail.</p>`);
+
+  const sent = await deliverEmail({ to: newEmail, subject: 'Confirme seu novo e-mail no BG Finance', html });
+  if (!sent) throw new Error('Nenhum provedor de e-mail configurado (BREVO_API_KEY ou RESEND_API_KEY)');
+}
+
+async function confirmEmailChange(req, res) {
+  const invalid = '/verified.html?status=invalid&kind=change';
+  const token = String(req.query.token || '');
+  if (!token || rateLimited(`email-change:${clientIp(req)}`, 20, 15 * 60 * 1000)) {
+    return res.redirect(invalid);
+  }
+
+  try {
+    const pending = await db.query(
+      `SELECT c.user_id, c.new_email, u.email AS old_email, u.name
+       FROM email_changes c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.token_hash = $1 AND c.expires_at > NOW()`,
+      [hashToken(token)]
+    );
+    const row = pending.rows[0];
+    if (!row) return res.redirect(invalid);
+
+    if (row.old_email !== row.new_email) {
+      await db.query(
+        `UPDATE users
+         SET email = $1, email_verified_at = NOW(), token_version = token_version + 1
+         WHERE id = $2`,
+        [row.new_email, row.user_id]
+      );
+      deliverEmail({
+        to: row.old_email,
+        subject: 'O e-mail da sua conta no BG Finance mudou',
+        html: emailCard(`
+        <p>${firstNameHtml(row.name)}, o e-mail da sua conta no BG Finance foi trocado para <strong>${escapeHtml(row.new_email)}</strong>.</p>
+        <p style="color:#9ca3af;font-size:13px">Se não foi você, responda este e-mail o quanto antes.</p>`),
+      }).catch((err) => console.error('Aviso ao e-mail antigo falhou:', err.message));
+    }
+    return res.redirect(`/verified.html?status=ok&kind=change&email=${encodeURIComponent(row.new_email)}`);
+  } catch (err) {
+    if (err.code !== '23505') console.error('Erro ao confirmar troca de e-mail:', err);
+    return res.redirect(invalid);
+  }
+}
+
 async function forgotPassword(req, res) {
   const email = String(req.body.email || '').trim().toLowerCase();
   const generic = { ok: true, message: 'Se esse e-mail estiver cadastrado, enviaremos um link para redefinir a senha.' };
@@ -618,8 +713,11 @@ async function login(req, res) {
     const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
+      noteFailedLogin(user, ip);
       return res.status(401).json({ error: 'Credenciais invalidas' });
     }
+
+    failedLogins.delete(user.id);
 
     if (MAIL_READY && !user.email_verified_at) {
       return res.status(403).json({ error: 'Confirme seu e-mail antes de entrar' });
@@ -647,6 +745,7 @@ app.post('/auth/forgot', forgotPassword);
 app.post('/auth/reset', resetPassword);
 app.get('/auth/verify', verifyEmail);
 app.post('/auth/verify/resend', resendVerification);
+app.get('/auth/email-change', confirmEmailChange);
 app.post('/auth/logout', (req, res) => {
   clearSession(res);
   return res.json({ ok: true });
@@ -738,6 +837,20 @@ app.put('/me', authenticateToken, async (req, res) => {
       }
     }
 
+    const confirmFirst = emailChanged && MAIL_READY;
+    if (confirmFirst) {
+      const taken = await db.query('SELECT 1 FROM users WHERE email = $1', [email]);
+      if (taken.rows[0]) return res.status(400).json({ error: 'Email ja cadastrado' });
+      try {
+        await sendEmailChange(user.id, email, name || user.name);
+      } catch (mailErr) {
+        console.error('E-mail de troca falhou:', mailErr.message);
+        return res.status(500).json({ error: 'Nao foi possivel enviar o e-mail de confirmacao agora. Tente mais tarde.' });
+      }
+    }
+    const directEmail = emailChanged && !confirmFirst;
+    const pending = confirmFirst ? { pending_email: email } : {};
+
     const sets = [];
     const values = [];
     let i = 1;
@@ -749,7 +862,7 @@ app.put('/me', authenticateToken, async (req, res) => {
       sets.push(`name = $${i++}`);
       values.push(name);
     }
-    if (emailChanged) {
+    if (directEmail) {
       sets.push(`email = $${i++}`);
       values.push(email);
     }
@@ -765,6 +878,7 @@ app.put('/me', authenticateToken, async (req, res) => {
         email: user.email,
         created_at: user.created_at,
         avatar: user.avatar,
+        ...pending,
       });
     }
 
@@ -777,7 +891,7 @@ app.put('/me', authenticateToken, async (req, res) => {
     const saved = result.rows[0];
     if (!saved) return res.status(404).json({ error: 'Usuario nao encontrado' });
 
-    if (emailChanged || newPassword) {
+    if (directEmail || newPassword) {
       issueSession(res, signSession(saved));
     }
 
@@ -787,6 +901,7 @@ app.put('/me', authenticateToken, async (req, res) => {
       email: saved.email,
       created_at: saved.created_at,
       avatar: saved.avatar,
+      ...pending,
     });
   } catch (err) {
     if (err.code === '23505') {
@@ -2234,6 +2349,25 @@ app.delete('/transactions/:id', authenticateToken, async (req, res) => {
   }
 });
 
+const UNVERIFIED_DAYS = 7;
+
+async function sweepStale() {
+  try {
+    await db.query('DELETE FROM email_verifications WHERE expires_at < NOW()');
+    await db.query('DELETE FROM email_changes WHERE expires_at < NOW()');
+    await db.query('DELETE FROM password_resets WHERE expires_at < NOW()');
+    if (!MAIL_READY) return;
+    const gone = await db.query(
+      `DELETE FROM users
+       WHERE email_verified_at IS NULL AND created_at < NOW() - ($1 || ' days')::interval`,
+      [String(UNVERIFIED_DAYS)]
+    );
+    if (gone.rowCount) console.log(`Contas nao confirmadas removidas: ${gone.rowCount}`);
+  } catch (err) {
+    console.error('Limpeza de contas e links falhou:', err.message);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
 
 db.initDatabase()
@@ -2245,6 +2379,8 @@ db.initDatabase()
       console.log(MAIL_READY ? 'Confirmacao de e-mail no cadastro: ligada' : 'Confirmacao de e-mail no cadastro: desligada (sem provedor de e-mail)');
       console.log(`APP_URL: ${APP_URL}`);
     });
+    sweepStale();
+    setInterval(sweepStale, 12 * 60 * 60 * 1000).unref();
   })
   .catch((err) => {
     console.error('Erro ao iniciar banco:', err);
