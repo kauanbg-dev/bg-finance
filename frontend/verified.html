@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0f172a" />
+  <script src="theme-boot.js?v=70"></script>
+  <style>
+    html,body{background:#0f172a}
+    html[data-theme="light"],html[data-theme="light"] body{background:#f3f6fb}
+  </style>
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BG Finance" />
+  <link rel="manifest" href="/manifest.webmanifest?v=93" />
+  <link rel="icon" href="/favicon.ico?v=93" sizes="any" />
+  <link rel="icon" type="image/png" href="/icon-192.png?v=93" sizes="192x192" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=93" />
+  <title>Confirmação de e-mail - BG Finance</title>
+  <link rel="stylesheet" href="style.css?v=71" />
+</head>
+<body class="auth-body">
+  <main class="auth-shell single">
+    <section class="auth-panel">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img src="logo.png" alt="BG" class="auth-logo" />
+          <span>BG Finance</span>
+        </div>
+
+        <div id="step-ok" class="hidden">
+          <div class="auth-badge success">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <h1 class="auth-title">E-mail confirmado!</h1>
+          <p class="auth-subtitle">Tudo certo<span id="ok-email-wrap" class="hidden">, <strong id="ok-email"></strong> foi confirmado</span>. Sua conta no BG Finance já está pronta para usar.</p>
+          <a class="btn primary full btn-link" id="login-btn" href="./login.html">Entrar na minha conta</a>
+        </div>
+
+        <div id="step-invalid" class="hidden">
+          <div class="auth-badge danger">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+          </div>
+          <h1 class="auth-title">Link inválido ou vencido</h1>
+          <p class="auth-subtitle">Esse link de confirmação não vale mais. Digite o e-mail da conta e enviamos um novo.</p>
+
+          <form id="resend-form" class="auth-form" novalidate>
+            <div class="field">
+              <label for="email">E-mail</label>
+              <div class="input-wrap">
+                <svg class="input-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+                <input id="email" type="email" placeholder="voce@email.com" autocomplete="email" required />
+              </div>
+            </div>
+
+            <p id="msg" class="msg" role="alert"></p>
+
+            <button class="btn primary full" type="submit" id="submit-btn">Enviar novo link</button>
+          </form>
+
+          <a class="auth-switch" href="./login.html">
+            <span>Já confirmou?</span>
+            <strong>Ir para o login</strong>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="auth.js?v=67"></script>
+  <script src="verified.js?v=1"></script>
+  <script src="theme.js"></script>
+  <script src="pwa.js?v=66"></script>
+</body>
+</html>

@@ -435,7 +435,7 @@ async function sendVerification(userId, to, name) {
 async function verifyEmail(req, res) {
   const token = String(req.query.token || '');
   if (!token || rateLimited(`verify:${clientIp(req)}`, 20, 15 * 60 * 1000)) {
-    return res.redirect('/login.html?verified=0');
+    return res.redirect('/verified.html?status=invalid');
   }
 
   try {
@@ -448,11 +448,11 @@ async function verifyEmail(req, res) {
       [hashToken(token)]
     );
     const row = result.rows[0];
-    if (!row) return res.redirect('/login.html?verified=0');
-    return res.redirect(`/login.html?verified=1&email=${encodeURIComponent(row.email)}`);
+    if (!row) return res.redirect('/verified.html?status=invalid');
+    return res.redirect(`/verified.html?status=ok&email=${encodeURIComponent(row.email)}`);
   } catch (err) {
     console.error('Erro ao confirmar e-mail:', err);
-    return res.redirect('/login.html?verified=0');
+    return res.redirect('/verified.html?status=invalid');
   }
 }
 
