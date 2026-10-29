@@ -1256,6 +1256,19 @@ li button{
 .menu-select-item.is-active{
   background: rgba(59,130,246,.16);
 }
+.menu-select-item:focus-visible{
+  outline: none;
+  background: rgba(59,130,246,.22);
+  box-shadow: inset 0 0 0 1px rgba(59,130,246,.55);
+}
+.menu-select-item:disabled{ opacity: .45; cursor: not-allowed; }
+.menu-select-label{ flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-select-check{ display: inline-flex; flex: 0 0 auto; margin-left: auto; color: #60a5fa; }
+.menu-select-check svg{ width: 16px; height: 16px; }
+.menu-select-btn:disabled{ opacity: .55; cursor: not-allowed; }
+.menu-select-btn svg{ transition: transform .18s ease; }
+.menu-select.open .menu-select-btn svg{ transform: rotate(180deg); }
+.menu-select.drop-up .menu-select-list{ top: auto; bottom: calc(100% + 8px); }
 .menu-dot{
   --c: #60a5fa;
   flex: 0 0 auto;
