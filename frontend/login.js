@@ -44,6 +44,13 @@ if (params.get("registered") === "1") {
     setMsg(msg, "Conta criada! Agora é só entrar.", "success");
   }
 }
+const GOOGLE_ERRORS = {
+  erro: "Não foi possível entrar com o Google. Tente de novo.",
+  email: "Sua conta Google não tem um e-mail confirmado. Use outra conta ou entre com e-mail e senha.",
+  off: "O login com Google ainda não está disponível. Entre com e-mail e senha.",
+};
+if (GOOGLE_ERRORS[params.get("google")]) setMsg(msg, GOOGLE_ERRORS[params.get("google")]);
+
 let resending = false;
 resendBtn.addEventListener("click", async () => {
   if (resending) return;

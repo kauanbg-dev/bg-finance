@@ -32,6 +32,14 @@ Para o "esqueci a senha" enviar e-mail de verdade, defina também `APP_URL` (end
 
 Com o provedor de e-mail configurado, quem cria conta recebe um link de confirmação (vale 24 horas) e só consegue entrar depois de clicar. Na tela de login dá para pedir o link de novo. Contas que já existiam antes dessa mudança ficam confirmadas. Contas que passam de 7 dias sem confirmar são apagadas sozinhas. Trocar o e-mail no perfil também manda um link para o endereço novo, e a troca só vale depois do clique; o endereço antigo recebe um aviso. Sem `BREVO_API_KEY` nem `RESEND_API_KEY`, nada disso é exigido: o cadastro e a troca de e-mail entram direto.
 
+Quando alguém entra de um aparelho que a conta nunca usou, o dono recebe um aviso por e-mail (e no Telegram, se tiver vinculado) com navegador, sistema, horário e IP, mais um botão para trocar a senha. O primeiro aparelho registrado de cada conta não gera aviso.
+
+## Login com Google
+
+No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um "ID do cliente OAuth" do tipo "Aplicativo da Web" e cadastre `https://bg-finance.onrender.com/auth/google/callback` como URI de redirecionamento autorizado. Coloque o ID e a chave em `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no Render. Sem os dois, o botão "Entrar com Google" não aparece.
+
+Se já existir uma conta com o mesmo e-mail, o Google é ligado a ela. Se não existir, a conta é criada já confirmada e sem senha conhecida; para usar e-mail e senha também, a pessoa usa "Esqueceu a senha?".
+
 ## Telegram
 
 Crie um bot no [@BotFather](https://t.me/BotFather) e coloque o token em `TELEGRAM_BOT_TOKEN`. O `APP_URL` precisa ser o endereço https do app (no Render, `https://bg-finance.onrender.com`). Na subida, o servidor registra o webhook sozinho.

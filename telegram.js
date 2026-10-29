@@ -162,6 +162,22 @@ function notifyFailedLogins(user, count, ip) {
   return notifyAdmin('Senha errada várias vezes', user, [`${count} tentativas erradas em 15 minutos`, `IP: ${ip}`]);
 }
 
+async function sendNewDeviceAlert(chatId, { device, when, ip, link }) {
+  if (!TOKEN || !chatId) return false;
+  await send(
+    chatId,
+    [
+      '<b>Novo acesso à sua conta</b>',
+      '',
+      `Alguém entrou no BG Finance de um aparelho novo: ${escapeHtml(device)}.`,
+      `${escapeHtml(when)} · IP ${escapeHtml(ip)}`,
+      '',
+      `Se foi você, pode ignorar. Se não foi, <a href="${escapeHtml(link)}">troque sua senha agora</a>.`,
+    ].join('\n')
+  );
+  return true;
+}
+
 async function sendResetLink(chatId, link) {
   if (!TOKEN || !chatId) return false;
   await send(
@@ -601,4 +617,4 @@ async function start() {
   }
 }
 
-module.exports = { setup, start, configured, username, sendResetLink, notifyLogin, notifyFailedLogins };
+module.exports = { setup, start, configured, username, sendResetLink, sendNewDeviceAlert, notifyLogin, notifyFailedLogins };
