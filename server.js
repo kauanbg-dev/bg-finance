@@ -1768,10 +1768,12 @@ function cardPayload(body) {
   const last4 = String(body.last4 || '').replace(/\D/g, '');
   const creditLimit = Number(body.credit_limit);
   const color = String(body.color || '').trim().toLowerCase();
+  const nickname = String(body.nickname || '').trim().replace(/\s+/g, ' ');
 
   if (
     !issuer ||
     issuer.length > 80 ||
+    nickname.length > 40 ||
     !CARD_BRANDS.includes(brand) ||
     !/^\d{4}$/.test(last4) ||
     !Number.isFinite(creditLimit) ||
@@ -1782,7 +1784,7 @@ function cardPayload(body) {
     return null;
   }
 
-  return { issuer, brand, last4, creditLimit, color: color || null };
+  return { issuer, brand, last4, creditLimit, color: color || null, nickname: nickname || null };
 }
 
 function chargePayload(body) {
@@ -1805,7 +1807,7 @@ function chargePayload(body) {
   return { description, amount, spentAt: spent, paid: body.paid === true };
 }
 
-const CARD_SELECT = `id, issuer, brand, last4, color, credit_limit::float8 AS credit_limit, created_at`;
+const CARD_SELECT = `id, issuer, nickname, brand, last4, color, credit_limit::float8 AS credit_limit, created_at`;
 const CHARGE_SELECT = `id, card_id, description, amount::float8 AS amount, spent_at::text AS spent_at, paid_at, created_at, position`;
 
 function roundMoney(value) {
@@ -1929,10 +1931,10 @@ app.post('/cards', authenticateToken, async (req, res) => {
 
   try {
     const result = await db.query(
-      `INSERT INTO cards (user_id, issuer, brand, last4, credit_limit, color)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO cards (user_id, issuer, brand, last4, credit_limit, color, nickname)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING ${CARD_SELECT}`,
-      [req.user.id, card.issuer, card.brand, card.last4, card.creditLimit, card.color]
+      [req.user.id, card.issuer, card.brand, card.last4, card.creditLimit, card.color, card.nickname]
     );
     return res.status(201).json({ ...result.rows[0], charges: [] });
   } catch (err) {
@@ -1949,10 +1951,10 @@ app.put('/cards/:id', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       `UPDATE cards
-       SET issuer = $1, brand = $2, last4 = $3, credit_limit = $4, color = $5
-       WHERE id = $6 AND user_id = $7
+       SET issuer = $1, brand = $2, last4 = $3, credit_limit = $4, color = $5, nickname = $6
+       WHERE id = $7 AND user_id = $8
        RETURNING ${CARD_SELECT}`,
-      [card.issuer, card.brand, card.last4, card.creditLimit, card.color, id, req.user.id]
+      [card.issuer, card.brand, card.last4, card.creditLimit, card.color, card.nickname, id, req.user.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Cartao nao encontrado' });
     const full = await cardsForUser(req.user.id);

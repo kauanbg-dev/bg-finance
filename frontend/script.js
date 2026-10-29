@@ -472,6 +472,7 @@ function seedPreviewCards() {
     {
       id: nubank,
       issuer: "Nubank",
+      nickname: "Dia a dia",
       brand: "mastercard",
       last4: "4532",
       color: "#820ad1",
@@ -646,6 +647,7 @@ function previewApi(method, url, body) {
       const created = {
         id: ++previewSeq,
         issuer: body.issuer,
+        nickname: body.nickname || null,
         brand: body.brand,
         last4: String(body.last4 || "").replace(/\D/g, "").slice(0, 4),
         color: body.color || null,
@@ -680,6 +682,7 @@ function previewApi(method, url, body) {
     if (method === "PUT" && parts.length === 2) {
       Object.assign(card, {
         issuer: body.issuer,
+        nickname: body.nickname || null,
         brand: body.brand,
         last4: String(body.last4 || "").replace(/\D/g, "").slice(0, 4),
         color: body.color || null,
@@ -2791,7 +2794,7 @@ function fillImportCards() {
   wallet.forEach((card) => {
     const opt = document.createElement("option");
     opt.value = String(card.id);
-    opt.textContent = `${card.issuer} •••• ${card.last4}`;
+    opt.textContent = `${cardName(card)} •••• ${card.last4}`;
     select.append(opt);
   });
   if (wallet.some((card) => String(card.id) === current)) select.value = current;
@@ -3303,7 +3306,7 @@ function syncDebtCardField() {
   wallet.forEach((card) => {
     const option = document.createElement("option");
     option.value = String(card.id);
-    option.textContent = `${card.issuer} •••• ${card.last4}`;
+    option.textContent = `${cardName(card)} •••• ${card.last4}`;
     select.appendChild(option);
   });
   if (wallet.some((card) => String(card.id) === current)) select.value = current;
@@ -3409,7 +3412,7 @@ function debtCard(debt, bucket) {
   if (linked) {
     const cardTag = document.createElement("span");
     cardTag.className = "tag";
-    cardTag.textContent = `${linked.issuer} •••• ${linked.last4}`;
+    cardTag.textContent = `${cardName(linked)} •••• ${linked.last4}`;
     tags.appendChild(cardTag);
   }
   if (info) {
@@ -4919,6 +4922,8 @@ function startEditCard(card) {
   const last4 = document.getElementById("card-last4");
   const limit = document.getElementById("card-limit");
   if (issuer) issuer.value = card.issuer;
+  const nickname = document.getElementById("card-nickname");
+  if (nickname) nickname.value = card.nickname || "";
   if (last4) last4.value = card.last4;
   if (limit) limit.value = Number(card.credit_limit).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   setCardBrand(card.brand);
@@ -4955,6 +4960,10 @@ function startEditCharge(card, charge) {
   openEntryForm(document.getElementById("charge-form"), description);
 }
 
+function cardName(card) {
+  return card?.nickname || card?.issuer || "";
+}
+
 function selectedCard() {
   return wallet.find((card) => String(card.id) === String(selectedCardId)) || wallet[0] || null;
 }
@@ -4974,7 +4983,7 @@ function paintWalletButton() {
     return;
   }
   button.classList.add("has-card", `brand-${card.brand}`);
-  if (hint) hint.textContent = wallet.length > 1 ? `${card.issuer} · e mais ${wallet.length - 1}` : card.issuer;
+  if (hint) hint.textContent = wallet.length > 1 ? `${cardName(card)} · e mais ${wallet.length - 1}` : cardName(card);
   if (brand) brand.textContent = CARD_BRANDS[card.brand] || "";
   if (digits) digits.textContent = `•••• ${card.last4}`;
 }
@@ -5233,7 +5242,7 @@ function renderCardsView() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = item.id === card?.id ? "is-on" : "";
-    btn.textContent = `${item.issuer} •••• ${item.last4}`;
+    btn.textContent = `${cardName(item)} •••• ${item.last4}`;
     btn.addEventListener("click", () => {
       selectedCardId = item.id;
       resetChargeForm();
@@ -5254,6 +5263,12 @@ function renderCardsView() {
   const issuer = document.createElement("span");
   issuer.className = "plastic-issuer";
   issuer.textContent = card.issuer;
+  if (card.nickname) {
+    const nick = document.createElement("small");
+    nick.className = "plastic-nickname";
+    nick.textContent = card.nickname;
+    issuer.append(nick);
+  }
   const brand = document.createElement("span");
   brand.className = "plastic-brand";
   brand.textContent = CARD_BRANDS[card.brand] || card.brand;
@@ -5419,6 +5434,7 @@ function bindCards() {
       last4,
       credit_limit: creditLimit,
       color: document.getElementById("card-color").value,
+      nickname: document.getElementById("card-nickname").value.trim(),
     };
     try {
       if (editingCardId) {
