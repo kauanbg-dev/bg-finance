@@ -2166,8 +2166,40 @@ function deltaText(now, before) {
   return `${arrow} ${Math.abs(pct).toFixed(0)}% vs mês anterior`;
 }
 
+function accountBalance(upToMonth) {
+  return allTransactions.reduce((sum, t) => {
+    if (upToMonth && txDate(t).slice(0, 7) > upToMonth) return sum;
+    return sum + (t.type === "income" ? Number(t.amount) : -Number(t.amount));
+  }, 0);
+}
+
+const TOTAL_MODE_KEY = "bg-finance-total-mode";
+
+function paintTotalMode(hasMonth) {
+  const button = document.getElementById("total-mode");
+  const label = document.getElementById("total-label");
+  const monthOnly = hasMonth && localStorage.getItem(TOTAL_MODE_KEY) === "month";
+  if (button) {
+    button.disabled = !hasMonth;
+    button.setAttribute("aria-pressed", monthOnly ? "true" : "false");
+    button.setAttribute("aria-label", monthOnly ? "Saldo do mês. Mostrar o saldo total" : "Saldo total. Mostrar só o saldo do mês");
+  }
+  if (label) label.textContent = hasMonth ? (monthOnly ? "Saldo do mês" : "Saldo total") : "Saldo";
+  return monthOnly;
+}
+
+document.getElementById("total-mode")?.addEventListener("click", () => {
+  const next = localStorage.getItem(TOTAL_MODE_KEY) === "month" ? "total" : "month";
+  localStorage.setItem(TOTAL_MODE_KEY, next);
+  renderDashboard();
+});
+
 function renderCards(rows, income, expense) {
-  const total = income - expense;
+  const filters = currentFilters();
+  const net = income - expense;
+  const balance = accountBalance(filters.month);
+  const monthOnly = paintTotalMode(Boolean(filters.month));
+  const total = monthOnly ? net : balance;
   const rate = income > 0 ? ((income - expense) / income) * 100 : 0;
   incomeDisplay.textContent = money(income);
   expenseDisplay.textContent = money(expense);
@@ -2176,7 +2208,6 @@ function renderCards(rows, income, expense) {
   savingsDisplay.textContent = `${rate.toFixed(1).replace(".", ",")}%`;
   rateBarFill.style.width = `${Math.max(0, Math.min(100, rate))}%`;
 
-  const filters = currentFilters();
   if (filters.month) {
     const prevRows = allTransactions.filter((t) => matchesFilters(t, { ...filters, month: shiftMonth(filters.month, -1) }));
     const prev = totals(prevRows);
@@ -2191,8 +2222,16 @@ function renderCards(rows, income, expense) {
     expenseHint.textContent = `${m} saída${m === 1 ? "" : "s"}`;
     incomeHint.className = expenseHint.className = "card-hint";
   }
-  totalHint.textContent = total >= 0 ? "Você está no positivo" : "Gastos acima das receitas";
-  totalHint.className = `card-hint ${total >= 0 ? "good" : "bad"}`;
+  if (monthOnly) {
+    totalHint.textContent = `Total acumulado: ${money(balance)}`;
+    totalHint.className = `card-hint ${balance >= 0 ? "good" : "bad"}`;
+  } else if (filters.month) {
+    totalHint.textContent = `${net >= 0 ? "+" : "−"}${money(Math.abs(net))} neste mês`;
+    totalHint.className = `card-hint ${net >= 0 ? "good" : "bad"}`;
+  } else {
+    totalHint.textContent = total >= 0 ? "Você está no positivo" : "Gastos acima das receitas";
+    totalHint.className = `card-hint ${total >= 0 ? "good" : "bad"}`;
+  }
 }
 
 /* ---------- gráficos ---------- */

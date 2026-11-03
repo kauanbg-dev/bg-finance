@@ -868,6 +868,26 @@ input[type="number"]{
   mask: url("piggy-mark.png") center / contain no-repeat;
 }
 .card h3{ font-size: 12px; color: rgba(var(--wash),.78); font-weight: 600; }
+.total-mode{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.total-mode:hover{ background: rgba(var(--wash), .08); }
+.total-mode:focus-visible{ outline: 2px solid #60a5fa; outline-offset: 1px; }
+.total-mode svg{ transition: transform .18s ease; opacity: .8; }
+.total-mode[aria-pressed="true"] svg{ transform: rotate(180deg); }
+.total-mode:disabled{ cursor: default; }
+.total-mode:disabled:hover{ background: none; }
+.total-mode:disabled svg{ display: none; }
 .card p{ margin-top: 8px; font-size: clamp(15px, 4.6vw, 22px); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .card.income p{ color: var(--money-in-soft); }
 .card.expense p{ color: var(--money-out-soft); }
@@ -2086,6 +2106,7 @@ button.piggy-open{
   padding-top: 10px;
   border-top: 1px solid rgba(var(--wash), .08);
 }
+.loan-item .piggy-log{ flex: none; }
 .piggy-entry{
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -3359,5 +3380,45 @@ html.watch-round .boot-screen{ padding: 18%; }
   html:not(.watch) .tabbar .nav-btn > span:not(.nav-badge){ display: none; }
   html:not(.watch) .container{
     padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The sheet stays narrow on desktop, so the wide-screen three-column grid would squeeze the fields. */
+@media (min-width: 361px){
+  #sheet-body .debt-form{ grid-template-columns: 1fr 1fr; }
+  #sheet-body #debt-form{
+    grid-template-areas:
+      "name name"
+      "amount due"
+      "kind status"
+      "card card"
+      "notes notes"
+      "actions actions";
+  }
+  #sheet-body #sub-form{
+    grid-template-areas:
+      "name name"
+      "amount due"
+      "kind status"
+      "pay pay"
+      "notes notes"
+      "actions actions";
+  }
+  #sheet-body #save-form{
+    grid-template-areas:
+      "name name"
+      "amount amount"
+      "kind kind"
+      "status status"
+      "notes notes"
+      "actions actions";
+  }
+  #sheet-body #loan-form{
+    grid-template-areas:
+      "kind kind"
+      "name name"
+      "amount due"
+      "notes notes"
+      "actions actions";
   }
 }
