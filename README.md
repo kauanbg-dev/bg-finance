@@ -28,6 +28,8 @@ npm start
 
 No Render, configure as mesmas variáveis no painel do serviço. O arquivo `.env` não entra no git.
 
+O `npm install` liga um hook de commit que atualiza sozinho o `?v=` dos arquivos do `frontend/` (um hash do conteúdo) e o nome do cache do service worker. Para rodar na mão: `npm run assets`. Para testar a conexão com o banco: `npm run test-db`.
+
 Para o "esqueci a senha" enviar e-mail de verdade, defina também `APP_URL` (endereço público do app), `MAIL_FROM` e a chave de um provedor: `BREVO_API_KEY` ([Brevo](https://brevo.com), aceita um Gmail verificado como remetente) ou `RESEND_API_KEY` ([Resend](https://resend.com), precisa de domínio próprio). Sem a chave, o link de redefinição aparece só no log do servidor.
 
 Com o provedor de e-mail configurado, quem cria conta recebe um link de confirmação (vale 24 horas) e só consegue entrar depois de clicar. Na tela de login dá para pedir o link de novo. Contas que já existiam antes dessa mudança ficam confirmadas. Contas que passam de 7 dias sem confirmar são apagadas sozinhas. Trocar o e-mail no perfil também manda um link para o endereço novo, e a troca só vale depois do clique; o endereço antigo recebe um aviso. Sem `BREVO_API_KEY` nem `RESEND_API_KEY`, nada disso é exigido: o cadastro e a troca de e-mail entram direto.
