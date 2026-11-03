@@ -2081,6 +2081,7 @@ html[data-theme="light"] .card.save-piggy p{ color: #b45309; }
   justify-content: space-between;
   gap: 10px;
 }
+.save-main{ flex: 1 1 auto; min-width: 0; }
 .save-row .debt-title{ font-size: 14px; }
 .save-row .debt-amount{ font-size: 15px; }
 .save-row{ flex-wrap: wrap; }
@@ -2848,6 +2849,7 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
     align-items: center;
     justify-content: space-between;
   }
+  .debt-item:not(.loan-item) .debt-top{ flex: 1 1 auto; min-width: 0; }
   .debt-item.loan-item{
     flex-direction: column;
     align-items: stretch;
