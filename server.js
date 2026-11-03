@@ -2516,6 +2516,171 @@ app.delete('/savings/:id/entries/:entryId', authenticateToken, async (req, res) 
   }
 });
 
+const LOAN_DIRECTIONS = ['owe', 'owed'];
+
+function loanPayload(body) {
+  const person = String(body.person || '').trim().replace(/\s+/g, ' ');
+  const direction = String(body.direction || '').trim();
+  const amount = Math.round(Number(body.amount) * 100) / 100;
+  const notes = String(body.notes || '').trim();
+  const dueRaw = String(body.due_date || '').trim();
+  const dueDate = dueRaw ? cleanDay(dueRaw) : null;
+
+  if (
+    !person ||
+    person.length > 80 ||
+    !LOAN_DIRECTIONS.includes(direction) ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    amount >= 1e10 ||
+    notes.length > 240 ||
+    (dueRaw && !dueDate)
+  ) {
+    return null;
+  }
+  return { person, direction, amount, notes: notes || null, dueDate };
+}
+
+async function listLoans(userId) {
+  const result = await db.query(
+    `SELECT l.id, l.person, l.direction, l.amount::float8 AS amount, l.due_date::text AS due_date, l.notes, l.created_at,
+            COALESCE(
+              json_agg(json_build_object('id', p.id, 'amount', p.amount::float8, 'paid_on', p.paid_on::text)
+                       ORDER BY p.paid_on DESC, p.id DESC)
+                FILTER (WHERE p.id IS NOT NULL),
+              '[]'
+            ) AS payments
+     FROM person_loans l
+     LEFT JOIN person_loan_payments p ON p.loan_id = l.id
+     WHERE l.user_id = $1
+     GROUP BY l.id
+     ORDER BY l.due_date NULLS LAST, l.id DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
+async function paidOnLoan(loanId) {
+  const result = await db.query(
+    'SELECT COALESCE(SUM(amount), 0)::float8 AS paid FROM person_loan_payments WHERE loan_id = $1',
+    [loanId]
+  );
+  return result.rows[0].paid;
+}
+
+app.get('/loans', authenticateToken, async (req, res) => {
+  try {
+    return res.json(await listLoans(req.user.id));
+  } catch (err) {
+    console.error('Erro ao listar emprestimos:', err);
+    return res.status(500).json({ error: 'Erro ao listar emprestimos' });
+  }
+});
+
+app.post('/loans', authenticateToken, async (req, res) => {
+  const loan = loanPayload(req.body || {});
+  if (!loan) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      `INSERT INTO person_loans (user_id, person, direction, amount, due_date, notes)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [req.user.id, loan.person, loan.direction, loan.amount, loan.dueDate, loan.notes]
+    );
+    const id = result.rows[0].id;
+    return res.status(201).json((await listLoans(req.user.id)).find((row) => row.id === id));
+  } catch (err) {
+    console.error('Erro ao criar emprestimo:', err);
+    return res.status(500).json({ error: 'Erro ao criar emprestimo' });
+  }
+});
+
+app.put('/loans/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const loan = loanPayload(req.body || {});
+  if (!id || !loan) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const owned = await db.query('SELECT id FROM person_loans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (!owned.rows[0]) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
+    if (loan.amount + 0.005 < (await paidOnLoan(id))) {
+      return res.status(400).json({ error: 'O valor não pode ser menor que o que já foi devolvido' });
+    }
+    await db.query(
+      `UPDATE person_loans
+       SET person = $1, direction = $2, amount = $3, due_date = $4, notes = $5
+       WHERE id = $6 AND user_id = $7`,
+      [loan.person, loan.direction, loan.amount, loan.dueDate, loan.notes, id, req.user.id]
+    );
+    return res.json((await listLoans(req.user.id)).find((row) => row.id === id));
+  } catch (err) {
+    console.error('Erro ao editar emprestimo:', err);
+    return res.status(500).json({ error: 'Erro ao editar emprestimo' });
+  }
+});
+
+app.delete('/loans/:id', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query('DELETE FROM person_loans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
+    return res.json({ deleted: result.rowCount });
+  } catch (err) {
+    console.error('Erro ao excluir emprestimo:', err);
+    return res.status(500).json({ error: 'Erro ao excluir emprestimo' });
+  }
+});
+
+app.post('/loans/:id/payments', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+  const paidOn = cleanDay(req.body?.paid_on);
+  if (!id || !Number.isFinite(amount) || amount <= 0 || amount >= 1e10 || !paidOn) {
+    return res.status(400).json({ error: 'Dados invalidos' });
+  }
+
+  try {
+    const owned = await db.query(
+      'SELECT amount::float8 AS amount FROM person_loans WHERE id = $1 AND user_id = $2',
+      [id, req.user.id]
+    );
+    if (!owned.rows[0]) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
+    const left = Math.round((owned.rows[0].amount - (await paidOnLoan(id))) * 100) / 100;
+    if (amount > left + 0.005) {
+      return res.status(400).json({ error: 'Valor maior do que o que falta' });
+    }
+    await db.query(
+      'INSERT INTO person_loan_payments (user_id, loan_id, amount, paid_on) VALUES ($1, $2, $3, $4)',
+      [req.user.id, id, amount, paidOn]
+    );
+    return res.status(201).json((await listLoans(req.user.id)).find((row) => row.id === id));
+  } catch (err) {
+    console.error('Erro ao registrar devolucao:', err);
+    return res.status(500).json({ error: 'Erro ao registrar devolucao' });
+  }
+});
+
+app.delete('/loans/:id/payments/:paymentId', authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const paymentId = Number(req.params.paymentId);
+  if (!id || !paymentId) return res.status(400).json({ error: 'Dados invalidos' });
+
+  try {
+    const result = await db.query(
+      'DELETE FROM person_loan_payments WHERE id = $1 AND loan_id = $2 AND user_id = $3',
+      [paymentId, id, req.user.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Devolucao nao encontrada' });
+    return res.json({ deleted: result.rowCount });
+  } catch (err) {
+    console.error('Erro ao excluir devolucao:', err);
+    return res.status(500).json({ error: 'Erro ao excluir devolucao' });
+  }
+});
+
 telegram.setup(app, authenticateToken);
 
 app.delete('/transactions/:id', authenticateToken, async (req, res) => {

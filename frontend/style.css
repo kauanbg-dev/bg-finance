@@ -2429,6 +2429,21 @@ html[data-theme="light"] .card.debt-nextm p{ color: #1d4ed8; }
     "notes notes"
     "actions actions";
 }
+#loan-form{
+  grid-template-areas:
+    "kind kind"
+    "name name"
+    "amount due"
+    "notes notes"
+    "actions actions";
+}
+.loans-head{ margin-top: 28px; }
+.loan-summary{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.loan-amount{ display: grid; justify-items: end; gap: 2px; flex: none; }
+.loan-of{ font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.debt-amount.is-owed{ color: var(--money-in); }
+.loan-progress .limit-bar{ margin: 0 0 6px; }
+.loan-progress .debt-meta{ margin: 0; }
 .f-notes{ grid-area: notes; }
 .debt-form-actions{
   grid-area: actions;
@@ -2769,6 +2784,9 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
   #save-form{
     grid-template-areas: "name" "amount" "kind" "status" "notes" "actions";
   }
+  #loan-form{
+    grid-template-areas: "kind" "name" "amount" "due" "notes" "actions";
+  }
   #sub-form{
     grid-template-areas: "name" "amount" "due" "kind" "status" "pay" "notes" "actions";
   }
@@ -2808,6 +2826,17 @@ html[data-theme="light"] .tag.card{ color: #1d4ed8; }
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+  }
+  .debt-item.loan-item{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #loan-form{
+    grid-template-areas:
+      "kind kind kind"
+      "name amount due"
+      "notes notes notes"
+      "actions actions actions";
   }
   .tabbar{
     left: 50%;

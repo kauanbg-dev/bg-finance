@@ -462,6 +462,7 @@ function previewPiggy(name, category, notes, deposits) {
 }
 
 let previewCards = [];
+let previewLoans = null;
 
 function seedPreviewCards() {
   if (previewCards.length) return;
@@ -766,6 +767,44 @@ function previewApi(method, url, body) {
     }
     if (method === "DELETE" && index >= 0) previewDebts.splice(index, 1);
     return {};
+  }
+  if (url === "/loans" || url.startsWith("/loans/")) {
+    if (!previewLoans) {
+      previewLoans = [
+        {
+          id: ++previewSeq,
+          person: "Mãe",
+          direction: "owe",
+          amount: 1000,
+          due_date: `${shiftMonth(today().slice(0, 7), 2)}-10`,
+          notes: "Conserto do carro",
+          payments: [{ id: ++previewSeq, amount: 300, paid_on: shiftDay(today(), -15) }],
+        },
+        { id: ++previewSeq, person: "João", direction: "owed", amount: 200, due_date: null, notes: "", payments: [] },
+      ];
+    }
+    const parts = url.split("/").filter(Boolean);
+    const loan = previewLoans.find((item) => String(item.id) === parts[1]);
+    const copy = (item) => ({ ...item, payments: item.payments.map((payment) => ({ ...payment })) });
+    if (method === "GET") return previewLoans.map(copy);
+    if (method === "POST" && parts.length === 1) {
+      const created = { id: ++previewSeq, ...body, due_date: body.due_date || null, payments: [] };
+      previewLoans.unshift(created);
+      return copy(created);
+    }
+    if (!loan) return {};
+    if (parts[2] === "payments") {
+      if (method === "POST") {
+        loan.payments.unshift({ id: ++previewSeq, amount: Number(body.amount), paid_on: body.paid_on });
+        loan.payments.sort((a, b) => String(b.paid_on).localeCompare(String(a.paid_on)) || b.id - a.id);
+      } else if (method === "DELETE") {
+        loan.payments = loan.payments.filter((payment) => String(payment.id) !== parts[3]);
+      }
+      return copy(loan);
+    }
+    if (method === "PUT") Object.assign(loan, body, { due_date: body.due_date || null });
+    if (method === "DELETE") previewLoans = previewLoans.filter((item) => item !== loan);
+    return copy(loan);
   }
   if (url === "/subscriptions" || url.startsWith("/subscriptions/")) {
     seedPreviewSubs();
@@ -3048,6 +3087,7 @@ function sheetTitleFor(form) {
   const id = form?.id;
   if (id === "transaction-form") return "Novo lançamento";
   if (id === "debt-form") return editingDebtId ? "Editar dívida" : "Nova dívida";
+  if (id === "loan-form") return editingLoanId ? "Editar empréstimo" : "Novo empréstimo";
   if (id === "card-form") return editingCardId ? "Editar cartão" : "Novo cartão";
   if (id === "charge-form") return editingCharge ? "Editar extrato" : "Lançar no extrato";
   if (id === "sub-form") return editingSubId ? "Editar assinatura" : "Nova assinatura";
@@ -3113,6 +3153,7 @@ function dismissSheet() {
   }
   if (openForm.id === "transaction-form") resetTransactionForm();
   else if (openForm.id === "debt-form") resetDebtForm();
+  else if (openForm.id === "loan-form") resetLoanForm();
   else if (openForm.id === "sub-form") resetSubForm();
   else if (openForm.id === "save-form") resetSaveForm();
   else if (openForm.id === "card-form") resetCardForm();
@@ -3861,6 +3902,412 @@ function bindDebts() {
       toast(err.message, "error");
     } finally {
       debtSubmit.disabled = false;
+    }
+  });
+}
+
+let loans = [];
+let editingLoanId = null;
+const openLoans = new Set();
+let loanAddingId = null;
+
+const loanForm = document.getElementById("loan-form");
+const loanPerson = document.getElementById("loan-person");
+const loanAmount = document.getElementById("loan-amount");
+const loanDue = document.getElementById("loan-due");
+const loanNotes = document.getElementById("loan-notes");
+const loanDirection = document.getElementById("loan-direction");
+const loanSubmit = document.getElementById("loan-submit");
+
+function loanPaid(loan) {
+  return (loan.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+}
+
+function loanLeft(loan) {
+  return Math.max(0, Math.round((Number(loan.amount) - loanPaid(loan)) * 100) / 100);
+}
+
+function loanDone(loan) {
+  return loanLeft(loan) < 0.005;
+}
+
+function setLoanDirection(direction) {
+  if (loanDirection) loanDirection.value = direction;
+  document.querySelectorAll("#loan-form [data-direction]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.direction === direction);
+  });
+  const label = document.getElementById("loan-person-label");
+  if (label) label.textContent = direction === "owed" ? "Para quem emprestei" : "Quem me emprestou";
+}
+
+function resetLoanForm() {
+  editingLoanId = null;
+  loanForm?.reset();
+  setLoanDirection("owe");
+  if (loanSubmit) loanSubmit.textContent = "Adicionar empréstimo";
+  closeEntryForm(loanForm);
+}
+
+function startEditLoan(loan) {
+  editingLoanId = loan.id;
+  loanPerson.value = loan.person;
+  loanAmount.value = Number(loan.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  loanDue.value = loan.due_date ? String(loan.due_date).slice(0, 10) : "";
+  loanNotes.value = loan.notes || "";
+  setLoanDirection(loan.direction);
+  loanSubmit.textContent = "Salvar";
+  openEntryForm(loanForm, loanPerson);
+}
+
+function loanVerb(loan) {
+  return loan.direction === "owed" ? "Recebido" : "Devolvido";
+}
+
+function loanLog(loan) {
+  const box = document.createElement("div");
+  box.className = "piggy-log";
+  const payments = loan.payments || [];
+  if (!payments.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted piggy-empty";
+    empty.textContent = loan.direction === "owed" ? "Nada recebido ainda." : "Nada devolvido ainda.";
+    box.appendChild(empty);
+  }
+  payments.forEach((payment) => {
+    const line = document.createElement("div");
+    line.className = "piggy-entry";
+    const when = document.createElement("span");
+    when.textContent = formatDate(String(payment.paid_on).slice(0, 10));
+    const value = document.createElement("strong");
+    value.textContent = money(payment.amount);
+    line.append(when, value, debtAction(ICON.trash, "Excluir este valor", () => removeLoanPayment(loan, payment), "delete"));
+    box.appendChild(line);
+  });
+  if (loanDone(loan) || loanAddingId !== loan.id) return box;
+
+  const form = document.createElement("div");
+  form.className = "piggy-add";
+  const amountField = document.createElement("div");
+  amountField.className = "field";
+  const amountLabel = document.createElement("label");
+  amountLabel.textContent = loan.direction === "owed" ? "Quanto recebi" : "Quanto devolvi";
+  const amountInput = document.createElement("input");
+  amountInput.type = "text";
+  amountInput.inputMode = "decimal";
+  amountInput.autocomplete = "off";
+  amountInput.value = loanLeft(loan).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  amountLabel.htmlFor = amountInput.id = `loan-pay-${loan.id}`;
+  amountField.append(amountLabel, amountInput);
+  const dateField = document.createElement("div");
+  dateField.className = "field";
+  const dateLabel = document.createElement("label");
+  dateLabel.textContent = "Data";
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = today();
+  dateLabel.htmlFor = dateInput.id = `loan-pay-day-${loan.id}`;
+  dateField.append(dateLabel, dateInput);
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn secondary";
+  cancel.textContent = "Cancelar";
+  cancel.addEventListener("click", () => {
+    loanAddingId = null;
+    renderLoans();
+  });
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "btn primary";
+  save.textContent = "Registrar";
+  save.addEventListener("click", () => addLoanPayment(loan, amountInput, dateInput, save));
+  const actions = document.createElement("div");
+  actions.className = "entry-actions";
+  actions.append(cancel, save);
+  form.append(amountField, dateField, actions);
+  box.appendChild(form);
+  requestAnimationFrame(() => {
+    amountInput.focus({ preventScroll: true });
+    amountInput.select();
+  });
+  return box;
+}
+
+function loanCard(loan) {
+  const done = loanDone(loan);
+  const owed = loan.direction === "owed";
+  const paid = loanPaid(loan);
+  const bucket = done ? "paid" : scheduleBucket(loan.due_date ? String(loan.due_date).slice(0, 10) : "");
+  const article = document.createElement("article");
+  article.className = `debt-item loan-item is-${bucket}`;
+
+  const top = document.createElement("div");
+  top.className = "debt-top";
+  const main = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "debt-title";
+  title.textContent = loan.person;
+  const meta = document.createElement("p");
+  meta.className = "debt-meta";
+  const parts = [];
+  if (!done && loan.due_date) parts.push(`Acertar até ${formatDate(String(loan.due_date).slice(0, 10))}`);
+  if (loan.notes) parts.push(loan.notes);
+  meta.textContent = parts.join(" · ") || (done ? "Tudo acertado" : "Sem data combinada");
+  const tags = document.createElement("div");
+  tags.className = "debt-tags";
+  const side = document.createElement("span");
+  side.className = `tag ${owed ? "good" : "bad"}`;
+  side.textContent = owed ? "Me deve" : "Eu devo";
+  tags.appendChild(side);
+  const info = done ? { text: "Quitado", tone: "good" } : dueMeta(loan.due_date);
+  if (info) {
+    const tag = document.createElement("span");
+    tag.className = `tag ${info.tone}`.trim();
+    tag.textContent = info.text;
+    tags.appendChild(tag);
+  }
+  main.append(title, meta, tags);
+  const amount = document.createElement("div");
+  amount.className = "loan-amount";
+  const left = document.createElement("p");
+  left.className = `debt-amount${owed ? " is-owed" : ""}`;
+  left.textContent = money(done ? loan.amount : loanLeft(loan));
+  amount.appendChild(left);
+  if (!done && paid > 0) {
+    const of = document.createElement("span");
+    of.className = "loan-of";
+    of.textContent = `de ${money(loan.amount)}`;
+    amount.appendChild(of);
+  }
+  top.append(main, amount);
+  article.appendChild(top);
+
+  if (!done && paid > 0) {
+    const progress = document.createElement("div");
+    progress.className = "loan-progress";
+    const bar = document.createElement("div");
+    bar.className = "limit-bar";
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.min(100, (paid / Number(loan.amount)) * 100)}%`;
+    bar.appendChild(fill);
+    const note = document.createElement("p");
+    note.className = "debt-meta";
+    note.textContent = `${loanVerb(loan)} ${money(paid)} de ${money(loan.amount)}`;
+    progress.append(bar, note);
+    article.appendChild(progress);
+  }
+
+  const open = openLoans.has(loan.id) || loanAddingId === loan.id;
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  if (!done) {
+    const pay = document.createElement("button");
+    pay.type = "button";
+    pay.className = "pay-btn";
+    pay.textContent = owed ? "Recebi um valor" : "Devolvi um valor";
+    pay.addEventListener("click", () => {
+      loanAddingId = loan.id;
+      openLoans.add(loan.id);
+      renderLoans();
+    });
+    actions.appendChild(pay);
+  }
+  if ((loan.payments || []).length) {
+    const toggle = debtAction(ICON.chevron, open ? "Esconder histórico" : "Ver histórico", () => {
+      if (open) {
+        openLoans.delete(loan.id);
+        if (loanAddingId === loan.id) loanAddingId = null;
+      } else {
+        openLoans.add(loan.id);
+      }
+      renderLoans();
+    }, "piggy-toggle");
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    actions.appendChild(toggle);
+  }
+  if (!done) actions.appendChild(debtAction(ICON.edit, "Editar", () => startEditLoan(loan)));
+  actions.appendChild(debtAction(ICON.trash, "Excluir", () => removeLoan(loan), "delete"));
+  article.appendChild(actions);
+  if (open) article.appendChild(loanLog(loan));
+  return article;
+}
+
+function loanPeopleHint(items) {
+  const people = new Set(items.map((loan) => loan.person.toLocaleLowerCase("pt-BR"))).size;
+  if (!people) return "Ninguém";
+  return people === 1 ? "1 pessoa" : `${people} pessoas`;
+}
+
+function renderLoans() {
+  const open = loans.filter((loan) => !loanDone(loan));
+  const done = loans.filter(loanDone);
+  const owe = open.filter((loan) => loan.direction === "owe");
+  const owed = open.filter((loan) => loan.direction === "owed");
+  const total = (items) => items.reduce((sum, loan) => sum + loanLeft(loan), 0);
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set("loan-owe", money(total(owe)));
+  set("loan-owe-hint", loanPeopleHint(owe));
+  set("loan-owed", money(total(owed)));
+  set("loan-owed-hint", loanPeopleHint(owed));
+  const empty = document.getElementById("loan-empty");
+  if (empty) empty.hidden = open.length > 0;
+  const byDue = (a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")) || b.id - a.id;
+  document.getElementById("loan-list")?.replaceChildren(...[...open].sort(byDue).map(loanCard));
+  const doneCard = document.getElementById("loan-done-card");
+  if (doneCard) {
+    doneCard.hidden = done.length === 0;
+    doneCard.querySelector("[data-paid-body]")?.replaceChildren(...done.map(loanCard));
+    const sum = doneCard.querySelector("[data-sum]");
+    if (sum) sum.textContent = done.length ? money(done.reduce((acc, loan) => acc + Number(loan.amount), 0)) : "";
+    applyPaidFold(doneCard);
+  }
+}
+
+async function loadLoans() {
+  try {
+    loans = await api("GET", "/loans");
+  } catch {
+    loans = [];
+  }
+  renderLoans();
+}
+
+function loanBody(loan) {
+  return {
+    person: loan.person,
+    direction: loan.direction,
+    amount: Number(loan.amount),
+    due_date: loan.due_date ? String(loan.due_date).slice(0, 10) : "",
+    notes: loan.notes || "",
+  };
+}
+
+async function addLoanPayment(loan, amountInput, dateInput, button) {
+  const amount = parseAmount(amountInput.value);
+  const day = dateInput.value || today();
+  if (Number.isNaN(amount) || amount <= 0) {
+    amountInput.focus();
+    return toast("Valor inválido. Use por exemplo 49,90", "error");
+  }
+  if (amount > loanLeft(loan) + 0.005) {
+    amountInput.focus();
+    return toast(`Falta só ${money(loanLeft(loan))}`, "error");
+  }
+  const owed = loan.direction === "owed";
+  const onPanel = await askDialog({
+    title: "Adicionar no painel?",
+    text: owed
+      ? `Lançar ${money(amount)} que ${loan.person} devolveu como receita no painel?`
+      : `Lançar ${money(amount)} devolvido para ${loan.person} como despesa no painel?`,
+    okLabel: "Sim, lançar",
+    cancelLabel: "Não",
+  });
+  if (onPanel === null) return;
+  button.disabled = true;
+  try {
+    const saved = await api("POST", `/loans/${loan.id}/payments`, { amount, paid_on: day });
+    if (onPanel === true) {
+      await api("POST", "/transactions", {
+        description: owed ? `${loan.person} devolveu` : `Devolução para ${loan.person}`,
+        amount,
+        type: owed ? "income" : "expense",
+        category: "Outros",
+        date: day,
+      });
+      chartsNeedDraw = true;
+      await loadTransactions();
+    }
+    loanAddingId = null;
+    const finished = saved ? loanDone(saved) : false;
+    if (finished) openLoans.delete(loan.id);
+    await loadLoans();
+    toast(finished ? `Tudo acertado com ${loan.person}` : `${money(amount)} registrado`);
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function removeLoanPayment(loan, payment) {
+  try {
+    await api("DELETE", `/loans/${loan.id}/payments/${payment.id}`);
+    await loadLoans();
+    toast(`${money(payment.amount)} removido`, "info", {
+      label: "Desfazer",
+      run: async () => {
+        try {
+          await api("POST", `/loans/${loan.id}/payments`, { amount: Number(payment.amount), paid_on: String(payment.paid_on).slice(0, 10) });
+          await loadLoans();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      },
+    });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function removeLoan(loan) {
+  try {
+    await api("DELETE", `/loans/${loan.id}`);
+    if (editingLoanId === loan.id) resetLoanForm();
+    openLoans.delete(loan.id);
+    await loadLoans();
+    toast(`Empréstimo de ${loan.person} excluído`, "info", {
+      label: "Desfazer",
+      run: async () => {
+        try {
+          const created = await api("POST", "/loans", loanBody(loan));
+          for (const payment of [...(loan.payments || [])].reverse()) {
+            await api("POST", `/loans/${created.id}/payments`, { amount: Number(payment.amount), paid_on: String(payment.paid_on).slice(0, 10) });
+          }
+          await loadLoans();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      },
+    });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function bindLoans() {
+  document.querySelectorAll("#loan-form [data-direction]").forEach((btn) => {
+    btn.addEventListener("click", () => setLoanDirection(btn.dataset.direction));
+  });
+  document.getElementById("loan-cancel")?.addEventListener("click", resetLoanForm);
+  loanForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const person = loanPerson.value.trim();
+    const amount = parseAmount(loanAmount.value);
+    if (!person) return toast("Informe o nome da pessoa", "error");
+    if (Number.isNaN(amount) || amount <= 0) {
+      loanAmount.focus();
+      return toast("Valor inválido. Use por exemplo 49,90", "error");
+    }
+    const body = {
+      person,
+      direction: loanDirection.value || "owe",
+      amount,
+      due_date: loanDue.value,
+      notes: loanNotes.value.trim(),
+    };
+    loanSubmit.disabled = true;
+    try {
+      if (editingLoanId) await api("PUT", `/loans/${editingLoanId}`, body);
+      else await api("POST", "/loans", body);
+      toast(editingLoanId ? "Empréstimo atualizado" : "Empréstimo adicionado");
+      resetLoanForm();
+      await loadLoans();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      loanSubmit.disabled = false;
     }
   });
 }
@@ -5583,6 +6030,7 @@ window.addEventListener("pageshow", (event) => {
   bindEntryForms();
   bindNavigation();
   bindDebts();
+  bindLoans();
   bindSubscriptions();
   bindPaidFolds();
   bindSavings();
@@ -5598,6 +6046,7 @@ window.addEventListener("pageshow", (event) => {
       loadSettings(),
       loadTransactions(),
       loadDebts(),
+      loadLoans(),
       loadSubscriptions(),
       loadSavings(),
       loadCards(),

@@ -143,6 +143,30 @@ async function initDatabase() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS person_loans (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      person VARCHAR(80) NOT NULL,
+      direction VARCHAR(10) NOT NULL CHECK (direction IN ('owe', 'owed')),
+      amount NUMERIC(12,2) NOT NULL,
+      due_date DATE,
+      notes VARCHAR(240),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS person_loan_payments (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      loan_id INTEGER NOT NULL REFERENCES person_loans(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL,
+      paid_on DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     INSERT INTO piggy_entries (user_id, saving_id, amount, deposited_at)
     SELECT s.user_id, s.id, s.amount, (s.created_at AT TIME ZONE 'America/Sao_Paulo')::date
     FROM savings s
