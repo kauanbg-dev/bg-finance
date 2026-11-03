@@ -5114,6 +5114,7 @@ function saveRow(item) {
   const open = item.kind === "piggy" && openPiggies.has(item.id);
   if (open) row.classList.add("is-open");
   const main = document.createElement("div");
+  main.className = "save-main";
   const title = document.createElement(item.kind === "piggy" ? "button" : "div");
   title.className = item.kind === "piggy" ? "debt-title piggy-open" : "debt-title";
   title.textContent = item.name;
