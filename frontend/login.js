@@ -17,6 +17,7 @@ if ("caches" in window) {
   caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("bg-finance")).map((key) => caches.delete(key)))).catch(() => {});
 }
 
+// tenta de novo em 5xx porque o Render às vezes ainda tá acordando na 1ª chamada
 function bounceIfLoggedIn(tries = 3) {
   fetch("/me", { credentials: "include", cache: "no-store" })
     .then((res) => {

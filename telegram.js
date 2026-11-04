@@ -4,6 +4,7 @@ const db = require('./database');
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const ADMIN_CHAT_ID = String(process.env.ADMIN_TELEGRAM_CHAT_ID || '').trim();
 const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+// sai do JWT_SECRET pra não precisar de mais uma variável no Render
 const WEBHOOK_SECRET = process.env.JWT_SECRET
   ? crypto.createHmac('sha256', process.env.JWT_SECRET).update('telegram-webhook').digest('hex')
   : '';
@@ -408,8 +409,8 @@ async function onUpdate(update) {
   }
 }
 
-function setup(app, authenticateToken) {
-  app.get('/telegram', authenticateToken, (req, res) => {
+function setup(app, auth) {
+  app.get('/telegram', auth, (req, res) => {
     db.query('SELECT telegram_chat_id FROM users WHERE id = $1', [req.user.id])
       .then((result) => res.json({
         configured: configured(),
@@ -422,7 +423,7 @@ function setup(app, authenticateToken) {
       });
   });
 
-  app.post('/telegram/link', authenticateToken, async (req, res) => {
+  app.post('/telegram/link', auth, async (req, res) => {
     if (!configured()) return res.status(503).json({ error: 'Bot do Telegram ainda nao configurado' });
     try {
       const recent = await db.query(
@@ -450,7 +451,7 @@ function setup(app, authenticateToken) {
     }
   });
 
-  app.delete('/telegram', authenticateToken, async (req, res) => {
+  app.delete('/telegram', auth, async (req, res) => {
     try {
       await db.query('UPDATE users SET telegram_chat_id = NULL WHERE id = $1', [req.user.id]);
       return res.json({ linked: false });

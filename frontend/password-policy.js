@@ -32,7 +32,7 @@
     return false;
   }
 
-  // A common word is only rejected when what is left around it is too weak to carry the password.
+  // palavra comum só reprova se o resto da senha for fraco demais pra se segurar sozinho
   function leansOnCommonWord(lower) {
     const leet = [...lower].map((ch) => LEET[ch] || ch).join("");
     return COMMON.some((word) => {

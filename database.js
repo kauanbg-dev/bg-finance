@@ -8,6 +8,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  // TODO: ligar a verificação do certificado (o Neon tem cert válido), mas testar no Render antes
   ssl: { rejectUnauthorized: false },
 });
 
@@ -37,7 +38,7 @@ async function initDatabase() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_chat_id_key ON users (telegram_chat_id) WHERE telegram_chat_id IS NOT NULL`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_key ON users (google_sub) WHERE google_sub IS NOT NULL`);
-  // The default only fills rows that existed before the column, so old accounts stay able to log in.
+  // o DEFAULT só preenche quem já existia antes da coluna, aí as contas antigas continuam entrando
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW()`);
   await pool.query(`ALTER TABLE users ALTER COLUMN email_verified_at DROP DEFAULT`);
 
