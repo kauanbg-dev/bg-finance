@@ -1,3 +1,5 @@
+// TODO: esse arquivo passou de 6 mil linhas, quebrar em módulos quando der
+// ?preview=1 roda tudo com dados falsos, sem backend (bom pra testar layout)
 const PREVIEW_FLAG = "bg-preview";
 const previewRequested = new URLSearchParams(location.search).get("preview") === "1" || location.hash === "#preview";
 if (previewRequested) {
@@ -1240,7 +1242,7 @@ function categoriesFor(type) {
   return [...defaults.map(pick), ...custom, pick("Outros")];
 }
 
-function fillCategorySelect(select, type, selected) {
+function fillCatSelect(select, type, selected) {
   if (!select) return;
   const cats = categoriesFor(type);
   select.innerHTML = cats.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
@@ -1257,7 +1259,7 @@ function setType(type) {
   typeInput.value = type;
   btnIncome.classList.toggle("active", type === "income");
   btnExpense.classList.toggle("active", type === "expense");
-  fillCategorySelect(categorySelect, type, categorySelect.selectedOptions[0]?.text);
+  fillCatSelect(categorySelect, type, categorySelect.selectedOptions[0]?.text);
 }
 
 btnIncome?.addEventListener("click", () => setType("income"));
@@ -1273,7 +1275,7 @@ descriptionInput?.addEventListener("input", () => {
   if (!hit) return;
   const [, cat, kind] = hit;
   if (typeInput.value !== kind) setType(kind);
-  fillCategorySelect(categorySelect, kind, cat);
+  fillCatSelect(categorySelect, kind, cat);
   categorySelect.dispatchEvent(new CustomEvent("change", { detail: "auto" }));
 });
 
@@ -1294,7 +1296,7 @@ newCategoryBtn?.addEventListener("click", async () => {
   try {
     const created = await api("POST", "/categories", { name, type });
     apiCategories.push(created);
-    fillCategorySelect(categorySelect, type, created.id);
+    fillCatSelect(categorySelect, type, created.id);
     categoryTouched = true;
     toast(`Categoria "${name}" criada`);
   } catch (err) {
@@ -1303,7 +1305,7 @@ newCategoryBtn?.addEventListener("click", async () => {
 });
 
 if (dateInput && !dateInput.value) dateInput.value = today();
-fillCategorySelect(categorySelect, "income");
+fillCatSelect(categorySelect, "income");
 
 function loadCategoryMap() {
   try {
@@ -1358,7 +1360,7 @@ function openEditModal(t) {
   editAmount.value = Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   editTypeValue = t.type;
   editDate.value = txDate(t);
-  fillCategorySelect(editCategory, t.type, t.category_id || inferCategory(t));
+  fillCatSelect(editCategory, t.type, t.category_id || inferCategory(t));
   editIncomeBtn.classList.toggle("active", t.type === "income");
   editExpenseBtn.classList.toggle("active", t.type === "expense");
   editModal.classList.remove("hidden");
@@ -1376,7 +1378,7 @@ document.getElementById("delete-edit")?.addEventListener("click", () => {
   const current = editingTransaction;
   if (!current) return;
   closeEditModal();
-  deleteTransaction(current);
+  deleteTx(current);
 });
 editModal?.addEventListener("click", (e) => {
   if (e.target.classList.contains("modal-backdrop")) closeEditModal();
@@ -1385,13 +1387,13 @@ editIncomeBtn?.addEventListener("click", () => {
   editTypeValue = "income";
   editIncomeBtn.classList.add("active");
   editExpenseBtn.classList.remove("active");
-  fillCategorySelect(editCategory, "income", editCategory.selectedOptions[0]?.text);
+  fillCatSelect(editCategory, "income", editCategory.selectedOptions[0]?.text);
 });
 editExpenseBtn?.addEventListener("click", () => {
   editTypeValue = "expense";
   editExpenseBtn.classList.add("active");
   editIncomeBtn.classList.remove("active");
-  fillCategorySelect(editCategory, "expense", editCategory.selectedOptions[0]?.text);
+  fillCatSelect(editCategory, "expense", editCategory.selectedOptions[0]?.text);
 });
 
 function txBody({ description, amount, type, select, date }) {
@@ -1444,7 +1446,7 @@ editForm?.addEventListener("submit", async (e) => {
   }
 });
 
-async function deleteTransaction(t) {
+async function deleteTx(t) {
   try {
     await api("DELETE", `/transactions/${t.id}`);
   } catch (err) {
@@ -1500,7 +1502,7 @@ function filteredRows() {
   return allTransactions.filter((t) => matchesFilters(t, filters));
 }
 
-function refreshCategoryFilter() {
+function refreshCatFilter() {
   const current = categoryFilter.value;
   const cats = [...new Set(allTransactions.map(inferCategory))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   categoryFilter.innerHTML =
@@ -1946,7 +1948,7 @@ function appendDayCard(iso, ordered, sortedList) {
       delBtn.innerHTML = ICON.trash;
       delBtn.addEventListener("click", (event) => {
         event.stopPropagation();
-        deleteTransaction(t);
+        deleteTx(t);
       });
       actions.append(editBtn, delBtn);
       line.append(row, actions);
@@ -2115,7 +2117,7 @@ function appendTxRow(t, inDay, classes = [], dateSpan = 0, dayGroup = []) {
     delBtn.title = "Excluir";
     delBtn.setAttribute("aria-label", "Excluir");
     delBtn.innerHTML = ICON.trash;
-    delBtn.addEventListener("click", () => deleteTransaction(t));
+    delBtn.addEventListener("click", () => deleteTx(t));
     actions.append(dragHandle(`Arrastar ${t.description}`), editBtn, delBtn);
     actTd.appendChild(actions);
     tr.appendChild(actTd);
@@ -2166,6 +2168,7 @@ function deltaText(now, before) {
   return `${arrow} ${Math.abs(pct).toFixed(0)}% vs mês anterior`;
 }
 
+// varre todas as transações a cada render. por enquanto tá ok, se ficar lento cachear por mês
 function accountBalance(upToMonth) {
   return allTransactions.reduce((sum, t) => {
     if (upToMonth && txDate(t).slice(0, 7) > upToMonth) return sum;
@@ -2720,7 +2723,7 @@ async function loadCategories() {
   } catch {
     apiCategories = [];
   }
-  fillCategorySelect(categorySelect, typeInput.value || "income");
+  fillCatSelect(categorySelect, typeInput.value || "income");
 }
 
 async function loadTransactions() {
@@ -2730,7 +2733,7 @@ async function loadTransactions() {
     allTransactions = [];
   }
   loading = false;
-  refreshCategoryFilter();
+  refreshCatFilter();
   renderDashboard();
 }
 
@@ -2899,7 +2902,7 @@ function parseCsvLine(line, sep) {
   return out;
 }
 
-function normalizeImportDay(value) {
+function importDay(value) {
   const raw = String(value || "").trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
   const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
@@ -2931,7 +2934,7 @@ function parseStatementCsv(text) {
   return lines.slice(start).map((line) => {
     const cols = parseCsvLine(line, sep);
     return {
-      date: normalizeImportDay(dateI >= 0 ? cols[dateI] : cols[0]),
+      date: importDay(dateI >= 0 ? cols[dateI] : cols[0]),
       description: (titleI >= 0 ? cols[titleI] : cols[1] || "").slice(0, 120),
       amount: parseImportAmount(amountI >= 0 ? cols[amountI] : cols[2]),
       category: catI >= 0 ? cols[catI] || "" : "",
@@ -2946,7 +2949,7 @@ function parseStatementOfx(text) {
       return match ? match[1].trim() : "";
     };
     return {
-      date: normalizeImportDay(grab("DTPOSTED")),
+      date: importDay(grab("DTPOSTED")),
       description: (grab("MEMO") || grab("NAME")).slice(0, 120),
       amount: parseImportAmount(grab("TRNAMT")),
       category: "",
@@ -3095,7 +3098,7 @@ form?.addEventListener("submit", async (e) => {
         linkingSaved = false;
       }
     }
-    resetTransactionForm();
+    resetTxForm();
     toast(`${body.type === "income" ? "Receita" : "Despesa"} de ${money(amount)} adicionada`);
     await loadTransactions();
   } catch (err) {
@@ -3175,7 +3178,7 @@ function closeEntryForm(target) {
   }
 }
 
-function resetTransactionForm() {
+function resetTxForm() {
   if (descriptionInput) descriptionInput.value = "";
   if (amountInput) amountInput.value = "";
   categoryTouched = false;
@@ -3190,7 +3193,7 @@ function dismissSheet() {
     closeEntryForm(form);
     return;
   }
-  if (openForm.id === "transaction-form") resetTransactionForm();
+  if (openForm.id === "transaction-form") resetTxForm();
   else if (openForm.id === "debt-form") resetDebtForm();
   else if (openForm.id === "loan-form") resetLoanForm();
   else if (openForm.id === "sub-form") resetSubForm();
@@ -3208,7 +3211,7 @@ function bindEntryForms() {
   document.querySelectorAll("[data-open-form]").forEach((btn) => {
     btn.addEventListener("click", () => openEntryForm(document.getElementById(btn.dataset.openForm)));
   });
-  document.getElementById("tx-cancel")?.addEventListener("click", resetTransactionForm);
+  document.getElementById("tx-cancel")?.addEventListener("click", resetTxForm);
   document.getElementById("tx-modal-close")?.addEventListener("click", dismissSheet);
   txModal?.querySelector(".modal-backdrop")?.addEventListener("click", dismissSheet);
 }
@@ -6227,7 +6230,7 @@ function enhanceSelect(select, { colorize = ["category", "category-filter", "edi
     else if (event.key === "Tab") close();
   });
 
-  // Code that sets .value or .selectedIndex directly fires no event, so the button would keep the old label.
+  // mudar .value/.selectedIndex via código não dispara evento nenhum, aí o botão ficava com o texto velho
   for (const prop of ["value", "selectedIndex"]) {
     const native = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, prop);
     Object.defineProperty(select, prop, {

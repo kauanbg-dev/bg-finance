@@ -83,6 +83,7 @@ const BCRYPT_ROUNDS = 12;
 const SESSION_COOKIE = 'bg_session';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_JWT = '7d';
+// rate limit em memória mesmo. só funciona porque o Render roda um processo só
 const attempts = new Map();
 const failedLogins = new Map();
 const FAILED_LOGIN_ALERT = 5;
@@ -112,12 +113,12 @@ function guardTraffic(req, res, next) {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   const ip = clientIp(req);
   const route = req.path;
-  const auth = route === '/auth/login' || route === '/login'
+  const authRoute = route === '/auth/login' || route === '/login'
     || route === '/auth/register' || route === '/register'
     || route === '/auth/forgot' || route === '/auth/reset' || route === '/auth/verify/resend';
-  if (auth && rateLimited(`auth:${ip}`, 40, 15 * 60 * 1000)) return tooMany(res);
+  if (authRoute && rateLimited(`auth:${ip}`, 40, 15 * 60 * 1000)) return tooMany(res);
   if (route === '/telegram/webhook' && rateLimited(`tg:${ip}`, 120, 60 * 1000)) return tooMany(res);
-  if (!auth && route !== '/telegram/webhook') {
+  if (!authRoute && route !== '/telegram/webhook') {
     const hasSession = Boolean(cookieValue(req, SESSION_COOKIE) || /^Bearer\s+\S+/i.test(String(req.headers.authorization || '')));
     if (hasSession && rateLimited(`api:${ip}`, 240, 60 * 1000)) return tooMany(res);
     if (!hasSession && rateLimited(`api-unauth:${ip}`, 60, 60 * 1000)) return tooMany(res);
@@ -162,6 +163,7 @@ function issueSession(res, token) {
   res.cookie(SESSION_COOKIE, token, sessionCookie());
 }
 
+// renova a cada request, então quem abre o app toda semana nunca cai
 function refreshSession(res, payload) {
   if (!payload?.id) return;
   issueSession(res, signSession(payload));
@@ -195,7 +197,7 @@ function noteFailedLogin(user, ip) {
   }
 }
 
-async function authenticateToken(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization;
   const token = (header && header.split(' ')[1]) || cookieValue(req, SESSION_COOKIE);
 
@@ -217,7 +219,7 @@ async function authenticateToken(req, res, next) {
   }
 }
 
-function normalizeAuthInput(body) {
+function readAuth(body) {
   return {
     name: String(body.name || '').trim(),
     email: String(body.email || '').trim().toLowerCase(),
@@ -228,6 +230,7 @@ function normalizeAuthInput(body) {
 function parseDate(value) {
   if (!value) return null;
   const raw = String(value);
+  // meio-dia em Brasília pra data não pular pro dia anterior quando converte pra UTC
   const isoDay = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00-03:00` : raw;
   const date = new Date(isoDay);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -238,7 +241,7 @@ async function stampPosition(runner, id) {
   await runner.query('UPDATE transactions SET position = $1 WHERE id = $1 AND position = 0', [id]);
 }
 
-async function stampTablePosition(table, id) {
+async function stampRow(table, id) {
   if (!id || !/^(debts|subscriptions|savings|card_charges)$/.test(table)) return;
   await db.query(`UPDATE ${table} SET position = $1 WHERE id = $1 AND position = 0`, [id]);
 }
@@ -269,6 +272,7 @@ async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, e
     );
   }
   if (list.length) {
+    // regrava tudo de 1000 em 1000. lista grande fica pesado, mas por enquanto ninguém tem tanta linha assim
     const tuples = list.map((row, index) => `(${Number(row.id)}::int, ${(list.length - index) * 1000}::int)`).join(', ');
     await db.query(
       `UPDATE ${table} AS t
@@ -292,7 +296,8 @@ function validTransaction(description, amount, type) {
   );
 }
 
-async function resolveCategoryId(userId, type, body) {
+async function findCategoryId(userId, type, body) {
+  // TODO: conferir se a categoria é do usuário (ou padrão). hoje aceita qualquer id
   if (body.category_id !== undefined && body.category_id !== null && body.category_id !== '') {
     const id = Number(body.category_id);
     if (!Number.isNaN(id)) return id;
@@ -316,7 +321,7 @@ async function resolveCategoryId(userId, type, body) {
 }
 
 async function register(req, res) {
-  const { name, email, password } = normalizeAuthInput(req.body);
+  const { name, email, password } = readAuth(req.body);
 
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Preencha nome, email e senha' });
@@ -452,7 +457,7 @@ async function sendVerification(userId, to, name) {
   if (!sent) throw new Error('Nenhum provedor de e-mail configurado (BREVO_API_KEY ou RESEND_API_KEY)');
 }
 
-// The token stays valid until it expires, so a mail scanner opening the link first does not break the real click.
+// não queima o token no 1º clique: antivírus de e-mail abre o link antes da pessoa
 async function verifyEmail(req, res) {
   const token = String(req.query.token || '');
   if (!token || rateLimited(`verify:${clientIp(req)}`, 20, 15 * 60 * 1000)) {
@@ -688,7 +693,7 @@ async function resetPassword(req, res) {
 }
 
 async function login(req, res) {
-  const { email, password } = normalizeAuthInput(req.body);
+  const { email, password } = readAuth(req.body);
   const ip = clientIp(req);
 
   if (
@@ -706,6 +711,7 @@ async function login(req, res) {
 
     const user = result.rows[0];
 
+    // obs: sem usuário responde mais rápido que senha errada (não roda o bcrypt). baixo risco, fica assim por ora
     if (!user) {
       return res.status(401).json({ error: 'Credenciais invalidas' });
     }
@@ -778,7 +784,7 @@ async function checkNewDevice(user, device, ip, userAgent) {
     );
     return;
   }
-  // The first device an account ever records has nothing to compare against, so it is not "new".
+  // primeiro aparelho da conta não conta como "novo", não tem com o que comparar
   if (!before.rows[0].total) return;
 
   const label = deviceLabel(ua);
@@ -846,8 +852,8 @@ async function googleUser(sub, email, name) {
   if (bySub.rows[0]) return bySub.rows[0];
 
   const filler = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
-  // An unconfirmed account with this e-mail may have been created by someone else, so its password
-  // and sessions are dropped before Google proves who owns the address.
+  // conta não confirmada com esse e-mail pode ter sido criada por outra pessoa,
+  // então troca a senha e derruba as sessões antes de ligar no Google
   const linked = await db.query(
     `UPDATE users
      SET google_sub = $1,
@@ -897,7 +903,7 @@ async function googleCallback(req, res) {
       return fail('erro');
     }
 
-    // The ID token came straight from Google's token endpoint over TLS, so reading its claims is enough.
+    // veio direto do endpoint do Google por TLS, dá pra só ler o payload sem validar assinatura
     let profile;
     try {
       profile = JSON.parse(Buffer.from(String(tokens.id_token).split('.')[1], 'base64url').toString('utf8'));
@@ -938,6 +944,7 @@ app.get('/auth/providers', (req, res) => res.json({ google: GOOGLE_READY }));
 app.get('/auth/google', startGoogle);
 app.get('/auth/google/callback', googleCallback);
 app.post('/auth/logout', (req, res) => {
+  // TODO: só apaga o cookie. se alguém copiou o token ele vale até expirar (7 dias)
   clearSession(res);
   return res.json({ ok: true });
 });
@@ -951,25 +958,20 @@ function validAvatar(value) {
   );
 }
 
-app.get('/me', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query(
-      'SELECT id, name, email, created_at, avatar FROM users WHERE id = $1',
-      [req.user.id]
-    );
+app.get('/me', auth, async (req, res) => {
+  const result = await db.query(
+    'SELECT id, name, email, created_at, avatar FROM users WHERE id = $1',
+    [req.user.id]
+  );
 
-    if (!result.rows[0]) {
-      return res.status(404).json({ error: 'Usuario nao encontrado' });
-    }
-
-    return res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Erro ao buscar usuario:', err);
-    return res.status(500).json({ error: 'Erro ao buscar usuario' });
+  if (!result.rows[0]) {
+    return res.status(404).json({ error: 'Usuario nao encontrado' });
   }
+
+  return res.json(result.rows[0]);
 });
 
-app.put('/me', authenticateToken, async (req, res) => {
+app.put('/me', auth, async (req, res) => {
   const body = req.body || {};
   const hasAvatar = Object.prototype.hasOwnProperty.call(body, 'avatar');
   const hasName = Object.prototype.hasOwnProperty.call(body, 'name');
@@ -1103,44 +1105,34 @@ app.put('/me', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/me', authenticateToken, async (req, res) => {
+app.delete('/me', auth, async (req, res) => {
   const password = String(req.body?.password || '');
   if (!password) return res.status(400).json({ error: 'Informe a senha' });
 
-  try {
-    const result = await db.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
-    if (!result.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
+  const result = await db.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
 
-    const valid = await bcrypt.compare(password, result.rows[0].password);
-    if (!valid) return res.status(400).json({ error: 'Senha incorreta' });
+  const valid = await bcrypt.compare(password, result.rows[0].password);
+  if (!valid) return res.status(400).json({ error: 'Senha incorreta' });
 
-    await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
-    clearSession(res);
-    return res.json({ deleted: true });
-  } catch (err) {
-    console.error('Erro ao apagar conta:', err);
-    return res.status(500).json({ error: 'Erro ao apagar conta' });
-  }
+  await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+  clearSession(res);
+  return res.json({ deleted: true });
 });
 
-app.get('/categories', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT id, name, type, user_id
-       FROM categories
-       WHERE user_id IS NULL OR user_id = $1
-       ORDER BY type ASC, name ASC`,
-      [req.user.id]
-    );
+app.get('/categories', auth, async (req, res) => {
+  const result = await db.query(
+    `SELECT id, name, type, user_id
+     FROM categories
+     WHERE user_id IS NULL OR user_id = $1
+     ORDER BY type ASC, name ASC`,
+    [req.user.id]
+  );
 
-    return res.json(result.rows);
-  } catch (err) {
-    console.error('Erro ao listar categorias:', err);
-    return res.status(500).json({ error: 'Erro ao listar categorias' });
-  }
+  return res.json(result.rows);
 });
 
-app.post('/categories', authenticateToken, async (req, res) => {
+app.post('/categories', auth, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const type = String(req.body.type || '').trim();
 
@@ -1167,45 +1159,40 @@ app.post('/categories', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/transactions', authenticateToken, async (req, res) => {
+app.get('/transactions', auth, async (req, res) => {
   const month = String(req.query.month || '').trim();
 
-  try {
-    const params = [req.user.id];
-    let monthFilter = '';
+  const params = [req.user.id];
+  let monthFilter = '';
 
-    if (month) {
-      params.push(month);
-      monthFilter = `AND TO_CHAR(t.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') = $${params.length}`;
-    }
-
-    const result = await db.query(
-      `SELECT
-         t.id,
-         t.description,
-         t.amount,
-         t.type,
-         t.user_id,
-         t.category_id,
-         c.name AS category_name,
-         t.date,
-         t.position
-       FROM transactions t
-       LEFT JOIN categories c ON c.id = t.category_id
-       WHERE t.user_id = $1
-       ${monthFilter}
-       ORDER BY t.date DESC, t.position DESC, t.id DESC`,
-      params
-    );
-
-    return res.json(result.rows);
-  } catch (err) {
-    console.error('Erro ao listar transacoes:', err);
-    return res.status(500).json({ error: 'Erro ao listar transacoes' });
+  if (month) {
+    params.push(month);
+    monthFilter = `AND TO_CHAR(t.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') = $${params.length}`;
   }
+
+  const result = await db.query(
+    `SELECT
+       t.id,
+       t.description,
+       t.amount,
+       t.type,
+       t.user_id,
+       t.category_id,
+       c.name AS category_name,
+       t.date,
+       t.position
+     FROM transactions t
+     LEFT JOIN categories c ON c.id = t.category_id
+     WHERE t.user_id = $1
+     ${monthFilter}
+     ORDER BY t.date DESC, t.position DESC, t.id DESC`,
+    params
+  );
+
+  return res.json(result.rows);
 });
 
-app.post('/transactions', authenticateToken, async (req, res) => {
+app.post('/transactions', auth, async (req, res) => {
   const description = String(req.body.description || '').trim();
   const amount = Number(req.body.amount);
   const type = String(req.body.type || '').trim();
@@ -1215,31 +1202,26 @@ app.post('/transactions', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
-  try {
-    const categoryId = await resolveCategoryId(req.user.id, type, req.body);
-    const result = date
-      ? await db.query(
-          `INSERT INTO transactions (description, amount, type, user_id, category_id, date)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id`,
-          [description, amount, type, req.user.id, categoryId, date]
-        )
-      : await db.query(
-          `INSERT INTO transactions (description, amount, type, user_id, category_id)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id`,
-          [description, amount, type, req.user.id, categoryId]
-        );
-    const createdId = result.rows[0].id;
-    await stampPosition(db, createdId);
-    return res.status(201).json({ id: createdId });
-  } catch (err) {
-    console.error('Erro ao criar transacao:', err);
-    return res.status(500).json({ error: 'Erro ao criar transacao' });
-  }
+  const categoryId = await findCategoryId(req.user.id, type, req.body);
+  const result = date
+    ? await db.query(
+        `INSERT INTO transactions (description, amount, type, user_id, category_id, date)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [description, amount, type, req.user.id, categoryId, date]
+      )
+    : await db.query(
+        `INSERT INTO transactions (description, amount, type, user_id, category_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [description, amount, type, req.user.id, categoryId]
+      );
+  const createdId = result.rows[0].id;
+  await stampPosition(db, createdId);
+  return res.status(201).json({ id: createdId });
 });
 
-app.put('/transactions/:id', authenticateToken, async (req, res) => {
+app.put('/transactions/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   const description = String(req.body.description || '').trim();
   const amount = Number(req.body.amount);
@@ -1250,194 +1232,159 @@ app.put('/transactions/:id', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
-  try {
-    const categoryId = await resolveCategoryId(req.user.id, type, req.body);
-    const result = date
-      ? await db.query(
-          `UPDATE transactions
-           SET description = $1,
-               amount = $2,
-               type = $3,
-               category_id = $4,
-               date = $5
-           WHERE id = $6 AND user_id = $7`,
-          [description, amount, type, categoryId, date, id, req.user.id]
-        )
-      : await db.query(
-          `UPDATE transactions
-           SET description = $1,
-               amount = $2,
-               type = $3,
-               category_id = $4
-           WHERE id = $5 AND user_id = $6`,
-          [description, amount, type, categoryId, id, req.user.id]
-        );
+  const categoryId = await findCategoryId(req.user.id, type, req.body);
+  const result = date
+    ? await db.query(
+        `UPDATE transactions
+         SET description = $1,
+             amount = $2,
+             type = $3,
+             category_id = $4,
+             date = $5
+         WHERE id = $6 AND user_id = $7`,
+        [description, amount, type, categoryId, date, id, req.user.id]
+      )
+    : await db.query(
+        `UPDATE transactions
+         SET description = $1,
+             amount = $2,
+             type = $3,
+             category_id = $4
+         WHERE id = $5 AND user_id = $6`,
+        [description, amount, type, categoryId, id, req.user.id]
+      );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Transacao nao encontrada' });
-    }
-
-    return res.json({ updated: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao editar transacao:', err);
-    return res.status(500).json({ error: 'Erro ao editar transacao' });
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: 'Transacao nao encontrada' });
   }
+
+  return res.json({ updated: result.rowCount });
 });
 
-app.post('/transactions/:id/move', authenticateToken, async (req, res) => {
+app.post('/transactions/:id/move', auth, async (req, res) => {
   const id = Number(req.params.id);
   const dir = req.body?.dir === 'up' ? 'up' : req.body?.dir === 'down' ? 'down' : '';
   if (!id || !dir) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const current = await db.query(
-      `SELECT id, position, TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day
-       FROM transactions
-       WHERE id = $1 AND user_id = $2`,
-      [id, req.user.id]
-    );
-    const row = current.rows[0];
-    if (!row) return res.status(404).json({ error: 'Transacao nao encontrada' });
+  const current = await db.query(
+    `SELECT id, position, TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day
+     FROM transactions
+     WHERE id = $1 AND user_id = $2`,
+    [id, req.user.id]
+  );
+  const row = current.rows[0];
+  if (!row) return res.status(404).json({ error: 'Transacao nao encontrada' });
 
-    const siblings = await db.query(
-      `SELECT id, date, COALESCE(NULLIF(position, 0), id) AS rank
-       FROM transactions
-       WHERE user_id = $1
-       ORDER BY date DESC, COALESCE(NULLIF(position, 0), id) DESC, id DESC`,
-      [req.user.id]
-    );
-    const list = siblings.rows;
-    const index = list.findIndex((item) => Number(item.id) === id);
-    const swapWith = dir === 'up' ? list[index - 1] : list[index + 1];
-    if (index < 0 || !swapWith) return res.json({ moved: false });
+  const siblings = await db.query(
+    `SELECT id, date, COALESCE(NULLIF(position, 0), id) AS rank
+     FROM transactions
+     WHERE user_id = $1
+     ORDER BY date DESC, COALESCE(NULLIF(position, 0), id) DESC, id DESC`,
+    [req.user.id]
+  );
+  const list = siblings.rows;
+  const index = list.findIndex((item) => Number(item.id) === id);
+  const swapWith = dir === 'up' ? list[index - 1] : list[index + 1];
+  if (index < 0 || !swapWith) return res.json({ moved: false });
 
-    const me = list[index];
-    const a = Number(me.rank);
-    const b = Number(swapWith.rank);
-    const nextA = b === a ? b + (dir === 'up' ? 1 : -1) : b;
-    await db.query(
-      `UPDATE transactions AS t
-       SET date = v.date, position = v.position
-       FROM (VALUES
-         ($1::int, $2::timestamptz, $3::int),
-         ($4::int, $5::timestamptz, $6::int)
-       ) AS v(id, date, position)
-       WHERE t.id = v.id AND t.user_id = $7`,
-      [me.id, swapWith.date, nextA, swapWith.id, me.date, a, req.user.id]
-    );
-    return res.json({ moved: true });
-  } catch (err) {
-    console.error('Erro ao reordenar transacao:', err);
-    return res.status(500).json({ error: 'Erro ao reordenar lancamento' });
-  }
+  const me = list[index];
+  const a = Number(me.rank);
+  const b = Number(swapWith.rank);
+  const nextA = b === a ? b + (dir === 'up' ? 1 : -1) : b;
+  await db.query(
+    `UPDATE transactions AS t
+     SET date = v.date, position = v.position
+     FROM (VALUES
+       ($1::int, $2::timestamptz, $3::int),
+       ($4::int, $5::timestamptz, $6::int)
+     ) AS v(id, date, position)
+     WHERE t.id = v.id AND t.user_id = $7`,
+    [me.id, swapWith.date, nextA, swapWith.id, me.date, a, req.user.id]
+  );
+  return res.json({ moved: true });
 });
 
-app.post('/transactions/:id/place', authenticateToken, async (req, res) => {
+app.post('/transactions/:id/place', auth, async (req, res) => {
   const id = Number(req.params.id);
   const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
   const rawDate = String(req.body?.date || '').slice(0, 10);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
-  try {
-    const result = await placeOwnedRow({
-      table: 'transactions',
-      userId: req.user.id,
-      id,
-      beforeId: Number.isFinite(beforeId) ? beforeId : null,
-      copyDate: true,
-      dateCol: 'date',
-      date,
-      orderSql: 'date DESC, rank DESC, id DESC',
-    });
-    if (result.missing) return res.status(404).json({ error: 'Transacao nao encontrada' });
-    return res.json(result);
-  } catch (err) {
-    console.error('Erro ao posicionar transacao:', err);
-    return res.status(500).json({ error: 'Erro ao reordenar lancamento' });
-  }
+  const result = await placeOwnedRow({
+    table: 'transactions',
+    userId: req.user.id,
+    id,
+    beforeId: Number.isFinite(beforeId) ? beforeId : null,
+    copyDate: true,
+    dateCol: 'date',
+    date,
+    orderSql: 'date DESC, rank DESC, id DESC',
+  });
+  if (result.missing) return res.status(404).json({ error: 'Transacao nao encontrada' });
+  return res.json(result);
 });
 
-app.post('/debts/:id/place', authenticateToken, async (req, res) => {
+app.post('/debts/:id/place', auth, async (req, res) => {
   const id = Number(req.params.id);
   const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
-  try {
-    const result = await placeOwnedRow({
-      table: 'debts',
-      userId: req.user.id,
-      id,
-      beforeId: Number.isFinite(beforeId) ? beforeId : null,
-      orderSql: 'rank DESC, id DESC',
-    });
-    if (result.missing) return res.status(404).json({ error: 'Divida nao encontrada' });
-    return res.json(result);
-  } catch (err) {
-    console.error('Erro ao posicionar divida:', err);
-    return res.status(500).json({ error: 'Erro ao reordenar' });
-  }
+  const result = await placeOwnedRow({
+    table: 'debts',
+    userId: req.user.id,
+    id,
+    beforeId: Number.isFinite(beforeId) ? beforeId : null,
+    orderSql: 'rank DESC, id DESC',
+  });
+  if (result.missing) return res.status(404).json({ error: 'Divida nao encontrada' });
+  return res.json(result);
 });
 
-app.post('/subscriptions/:id/place', authenticateToken, async (req, res) => {
+app.post('/subscriptions/:id/place', auth, async (req, res) => {
   const id = Number(req.params.id);
   const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
-  try {
-    const result = await placeOwnedRow({
-      table: 'subscriptions',
-      userId: req.user.id,
-      id,
-      beforeId: Number.isFinite(beforeId) ? beforeId : null,
-      orderSql: 'rank DESC, id DESC',
-    });
-    if (result.missing) return res.status(404).json({ error: 'Assinatura nao encontrada' });
-    return res.json(result);
-  } catch (err) {
-    console.error('Erro ao posicionar assinatura:', err);
-    return res.status(500).json({ error: 'Erro ao reordenar' });
-  }
+  const result = await placeOwnedRow({
+    table: 'subscriptions',
+    userId: req.user.id,
+    id,
+    beforeId: Number.isFinite(beforeId) ? beforeId : null,
+    orderSql: 'rank DESC, id DESC',
+  });
+  if (result.missing) return res.status(404).json({ error: 'Assinatura nao encontrada' });
+  return res.json(result);
 });
 
-app.post('/savings/:id/place', authenticateToken, async (req, res) => {
+app.post('/savings/:id/place', auth, async (req, res) => {
   const id = Number(req.params.id);
   const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
-  try {
-    const result = await placeOwnedRow({
-      table: 'savings',
-      userId: req.user.id,
-      id,
-      beforeId: Number.isFinite(beforeId) ? beforeId : null,
-      orderSql: 'rank DESC, id DESC',
-    });
-    if (result.missing) return res.status(404).json({ error: 'Item nao encontrado' });
-    return res.json(result);
-  } catch (err) {
-    console.error('Erro ao posicionar guardado:', err);
-    return res.status(500).json({ error: 'Erro ao reordenar' });
-  }
+  const result = await placeOwnedRow({
+    table: 'savings',
+    userId: req.user.id,
+    id,
+    beforeId: Number.isFinite(beforeId) ? beforeId : null,
+    orderSql: 'rank DESC, id DESC',
+  });
+  if (result.missing) return res.status(404).json({ error: 'Item nao encontrado' });
+  return res.json(result);
 });
 
-app.post('/cards/:cardId/charges/:id/place', authenticateToken, async (req, res) => {
+app.post('/cards/:cardId/charges/:id/place', auth, async (req, res) => {
   const cardId = Number(req.params.cardId);
   const id = Number(req.params.id);
   const beforeId = req.body?.before_id == null || req.body?.before_id === '' ? null : Number(req.body.before_id);
   if (!cardId || !id) return res.status(400).json({ error: 'Dados invalidos' });
-  try {
-    const result = await placeOwnedRow({
-      table: 'card_charges',
-      userId: req.user.id,
-      id,
-      beforeId: Number.isFinite(beforeId) ? beforeId : null,
-      extraSql: 'AND card_id = $2',
-      extraParams: [cardId],
-      orderSql: 'rank DESC, id DESC',
-    });
-    if (result.missing) return res.status(404).json({ error: 'Lancamento nao encontrado' });
-    return res.json(result);
-  } catch (err) {
-    console.error('Erro ao posicionar compra:', err);
-    return res.status(500).json({ error: 'Erro ao reordenar' });
-  }
+  const result = await placeOwnedRow({
+    table: 'card_charges',
+    userId: req.user.id,
+    id,
+    beforeId: Number.isFinite(beforeId) ? beforeId : null,
+    extraSql: 'AND card_id = $2',
+    extraParams: [cardId],
+    orderSql: 'rank DESC, id DESC',
+  });
+  if (result.missing) return res.status(404).json({ error: 'Lancamento nao encontrado' });
+  return res.json(result);
 });
 
 function mapBankCategory(raw, type) {
@@ -1461,7 +1408,7 @@ function mapBankCategory(raw, type) {
   return 'Outros';
 }
 
-app.post('/imports/statement', authenticateToken, async (req, res) => {
+app.post('/imports/statement', auth, async (req, res) => {
   const source = req.body?.source === 'card' ? 'card' : req.body?.source === 'account' ? 'account' : '';
   const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 800) : [];
   if (!source || !rows.length) return res.status(400).json({ error: 'Arquivo sem lancamentos' });
@@ -1546,7 +1493,7 @@ app.post('/imports/statement', authenticateToken, async (req, res) => {
       }
 
       const category = mapBankCategory(`${row.category || ''} ${description}`, type);
-      const categoryId = await resolveCategoryId(req.user.id, type, { category });
+      const categoryId = await findCategoryId(req.user.id, type, { category });
       const inserted = await client.query(
         `INSERT INTO transactions (description, amount, type, user_id, category_id, date)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -1605,41 +1552,31 @@ function chartSettings(raw) {
   return { charts };
 }
 
-app.get('/settings', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
-    if (!result.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
-    return res.json(chartSettings(result.rows[0].settings));
-  } catch (err) {
-    console.error('Erro ao buscar ajustes:', err);
-    return res.status(500).json({ error: 'Erro ao buscar ajustes' });
-  }
+app.get('/settings', auth, async (req, res) => {
+  const result = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
+  return res.json(chartSettings(result.rows[0].settings));
 });
 
-app.put('/settings', authenticateToken, async (req, res) => {
+app.put('/settings', auth, async (req, res) => {
   const incoming = req.body && req.body.charts;
   if (!incoming || typeof incoming !== 'object') {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
-  try {
-    const current = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
-    if (!current.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
+  const current = await db.query('SELECT settings FROM users WHERE id = $1', [req.user.id]);
+  if (!current.rows[0]) return res.status(404).json({ error: 'Usuario nao encontrado' });
 
-    const next = chartSettings(current.rows[0].settings).charts;
-    for (const key of CHART_KEYS) {
-      if (typeof incoming[key] === 'boolean') next[key] = incoming[key];
-    }
-
-    const saved = await db.query(
-      `UPDATE users SET settings = $1::jsonb WHERE id = $2 RETURNING settings`,
-      [JSON.stringify({ charts: next }), req.user.id]
-    );
-    return res.json(chartSettings(saved.rows[0].settings));
-  } catch (err) {
-    console.error('Erro ao salvar ajustes:', err);
-    return res.status(500).json({ error: 'Erro ao salvar ajustes' });
+  const next = chartSettings(current.rows[0].settings).charts;
+  for (const key of CHART_KEYS) {
+    if (typeof incoming[key] === 'boolean') next[key] = incoming[key];
   }
+
+  const saved = await db.query(
+    `UPDATE users SET settings = $1::jsonb WHERE id = $2 RETURNING settings`,
+    [JSON.stringify({ charts: next }), req.user.id]
+  );
+  return res.json(chartSettings(saved.rows[0].settings));
 });
 
 function debtPayload(body) {
@@ -1700,64 +1637,49 @@ async function walletSnapshot(userId) {
   return { cards, debts };
 }
 
-app.get('/debts', authenticateToken, async (req, res) => {
-  try {
-    return res.json(await debtsForUser(req.user.id));
-  } catch (err) {
-    console.error('Erro ao listar dividas:', err);
-    return res.status(500).json({ error: 'Erro ao listar dividas' });
-  }
+app.get('/debts', auth, async (req, res) => {
+  return res.json(await debtsForUser(req.user.id));
 });
 
-app.post('/debts', authenticateToken, async (req, res) => {
+app.post('/debts', auth, async (req, res) => {
   const debt = debtPayload(req.body || {});
   if (!debt) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    if (!(await ownedCard(req.user.id, debt.cardId))) return res.status(400).json({ error: 'Cartao nao encontrado' });
-    const result = await db.query(
-      `INSERT INTO debts (user_id, name, kind, amount, due_date, notes, paid_at, card_id)
-       VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7 THEN NOW() ELSE NULL END, $8)
-       RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at, position`,
-      [req.user.id, debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid, debt.cardId]
-    );
-    await stampTablePosition('debts', result.rows[0].id);
-    return res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Erro ao criar divida:', err);
-    return res.status(500).json({ error: 'Erro ao criar divida' });
-  }
+  if (!(await ownedCard(req.user.id, debt.cardId))) return res.status(400).json({ error: 'Cartao nao encontrado' });
+  const result = await db.query(
+    `INSERT INTO debts (user_id, name, kind, amount, due_date, notes, paid_at, card_id)
+     VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7 THEN NOW() ELSE NULL END, $8)
+     RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at, position`,
+    [req.user.id, debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid, debt.cardId]
+  );
+  await stampRow('debts', result.rows[0].id);
+  return res.status(201).json(result.rows[0]);
 });
 
-app.put('/debts/:id', authenticateToken, async (req, res) => {
+app.put('/debts/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   const debt = debtPayload(req.body || {});
   if (!id || !debt) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    if (!(await ownedCard(req.user.id, debt.cardId))) return res.status(400).json({ error: 'Cartao nao encontrado' });
-    const result = await db.query(
-      `UPDATE debts
-       SET name = $1,
-           kind = $2,
-           amount = $3,
-           due_date = $4,
-           notes = $5,
-           paid_at = CASE
-             WHEN $6 THEN COALESCE(paid_at, NOW())
-             ELSE NULL
-           END,
-           card_id = $7
-       WHERE id = $8 AND user_id = $9
-       RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at`,
-      [debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid, debt.cardId, id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Divida nao encontrada' });
-    return res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Erro ao editar divida:', err);
-    return res.status(500).json({ error: 'Erro ao editar divida' });
-  }
+  if (!(await ownedCard(req.user.id, debt.cardId))) return res.status(400).json({ error: 'Cartao nao encontrado' });
+  const result = await db.query(
+    `UPDATE debts
+     SET name = $1,
+         kind = $2,
+         amount = $3,
+         due_date = $4,
+         notes = $5,
+         paid_at = CASE
+           WHEN $6 THEN COALESCE(paid_at, NOW())
+           ELSE NULL
+         END,
+         card_id = $7
+     WHERE id = $8 AND user_id = $9
+     RETURNING id, name, kind, amount, due_date::text AS due_date, notes, paid_at, card_id, created_at`,
+    [debt.name, debt.kind, debt.amount, debt.dueDate, debt.notes, debt.paid, debt.cardId, id, req.user.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: 'Divida nao encontrada' });
+  return res.json(result.rows[0]);
 });
 
 const CARD_BRANDS = ['visa', 'mastercard', 'elo', 'amex'];
@@ -1818,7 +1740,7 @@ function spMonth() {
   return new Date().toLocaleString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
 }
 
-function invoiceIsFutureDue(due, month) {
+function futureInvoice(due, month) {
   const day = String(due || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
   return day.slice(0, 7) > month;
@@ -1870,7 +1792,7 @@ async function adjustCardInvoice(client, userId, card, delta) {
     return changed;
   }
 
-  const current = open.find((debt) => !invoiceIsFutureDue(debt.due_date, month)) || open[0];
+  const current = open.find((debt) => !futureInvoice(debt.due_date, month)) || open[0];
   if (current) {
     await client.query(
       'UPDATE debts SET amount = $1, paid_at = NULL, card_id = $2 WHERE id = $3 AND user_id = $4',
@@ -1880,7 +1802,7 @@ async function adjustCardInvoice(client, userId, card, delta) {
   }
 
   const lastPaid = paid
-    .filter((debt) => !invoiceIsFutureDue(debt.due_date, month))
+    .filter((debt) => !futureInvoice(debt.due_date, month))
     .sort((a, b) => String(b.paid_at || '').localeCompare(String(a.paid_at || '')))[0];
   if (lastPaid) {
     await client.query(
@@ -1916,70 +1838,50 @@ async function cardsForUser(userId) {
   return [...byId.values()];
 }
 
-app.get('/cards', authenticateToken, async (req, res) => {
-  try {
-    return res.json(await cardsForUser(req.user.id));
-  } catch (err) {
-    console.error('Erro ao listar cartoes:', err);
-    return res.status(500).json({ error: 'Erro ao listar cartoes' });
-  }
+app.get('/cards', auth, async (req, res) => {
+  return res.json(await cardsForUser(req.user.id));
 });
 
-app.post('/cards', authenticateToken, async (req, res) => {
+app.post('/cards', auth, async (req, res) => {
   const card = cardPayload(req.body || {});
   if (!card) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `INSERT INTO cards (user_id, issuer, brand, last4, credit_limit, color, nickname)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING ${CARD_SELECT}`,
-      [req.user.id, card.issuer, card.brand, card.last4, card.creditLimit, card.color, card.nickname]
-    );
-    return res.status(201).json({ ...result.rows[0], charges: [] });
-  } catch (err) {
-    console.error('Erro ao criar cartao:', err);
-    return res.status(500).json({ error: 'Erro ao criar cartao' });
-  }
+  const result = await db.query(
+    `INSERT INTO cards (user_id, issuer, brand, last4, credit_limit, color, nickname)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING ${CARD_SELECT}`,
+    [req.user.id, card.issuer, card.brand, card.last4, card.creditLimit, card.color, card.nickname]
+  );
+  return res.status(201).json({ ...result.rows[0], charges: [] });
 });
 
-app.put('/cards/:id', authenticateToken, async (req, res) => {
+app.put('/cards/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   const card = cardPayload(req.body || {});
   if (!id || !card) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `UPDATE cards
-       SET issuer = $1, brand = $2, last4 = $3, credit_limit = $4, color = $5, nickname = $6
-       WHERE id = $7 AND user_id = $8
-       RETURNING ${CARD_SELECT}`,
-      [card.issuer, card.brand, card.last4, card.creditLimit, card.color, card.nickname, id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Cartao nao encontrado' });
-    const full = await cardsForUser(req.user.id);
-    return res.json(full.find((item) => item.id === id) || { ...result.rows[0], charges: [] });
-  } catch (err) {
-    console.error('Erro ao editar cartao:', err);
-    return res.status(500).json({ error: 'Erro ao editar cartao' });
-  }
+  const result = await db.query(
+    `UPDATE cards
+     SET issuer = $1, brand = $2, last4 = $3, credit_limit = $4, color = $5, nickname = $6
+     WHERE id = $7 AND user_id = $8
+     RETURNING ${CARD_SELECT}`,
+    [card.issuer, card.brand, card.last4, card.creditLimit, card.color, card.nickname, id, req.user.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: 'Cartao nao encontrado' });
+  const full = await cardsForUser(req.user.id);
+  return res.json(full.find((item) => item.id === id) || { ...result.rows[0], charges: [] });
 });
 
-app.delete('/cards/:id', authenticateToken, async (req, res) => {
+app.delete('/cards/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query('DELETE FROM cards WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Cartao nao encontrado' });
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir cartao:', err);
-    return res.status(500).json({ error: 'Erro ao excluir cartao' });
-  }
+  const result = await db.query('DELETE FROM cards WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Cartao nao encontrado' });
+  return res.json({ deleted: result.rowCount });
 });
 
-app.post('/cards/:id/charges', authenticateToken, async (req, res) => {
+app.post('/cards/:id/charges', auth, async (req, res) => {
   const cardId = Number(req.params.id);
   const charge = chargePayload(req.body || {});
   if (!cardId || !charge) return res.status(400).json({ error: 'Dados invalidos' });
@@ -2013,7 +1915,7 @@ app.post('/cards/:id/charges', authenticateToken, async (req, res) => {
   }
 });
 
-app.put('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) => {
+app.put('/cards/:id/charges/:chargeId', auth, async (req, res) => {
   const cardId = Number(req.params.id);
   const chargeId = Number(req.params.chargeId);
   const charge = chargePayload(req.body || {});
@@ -2064,7 +1966,7 @@ app.put('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) => {
+app.delete('/cards/:id/charges/:chargeId', auth, async (req, res) => {
   const cardId = Number(req.params.id);
   const chargeId = Number(req.params.chargeId);
   if (!cardId || !chargeId) return res.status(400).json({ error: 'Dados invalidos' });
@@ -2103,7 +2005,7 @@ app.delete('/cards/:id/charges/:chargeId', authenticateToken, async (req, res) =
   }
 });
 
-app.post('/cards/:id/settle', authenticateToken, async (req, res) => {
+app.post('/cards/:id/settle', auth, async (req, res) => {
   const cardId = Number(req.params.id);
   const amount = Number(req.body?.amount);
   const paid = req.body?.paid === true;
@@ -2152,18 +2054,13 @@ app.post('/cards/:id/settle', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/debts/:id', authenticateToken, async (req, res) => {
+app.delete('/debts/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query('DELETE FROM debts WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Divida nao encontrada' });
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir divida:', err);
-    return res.status(500).json({ error: 'Erro ao excluir divida' });
-  }
+  const result = await db.query('DELETE FROM debts WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Divida nao encontrada' });
+  return res.json({ deleted: result.rowCount });
 });
 
 const SUB_CYCLES = ['monthly', 'yearly'];
@@ -2228,74 +2125,54 @@ function subscriptionPayload(body) {
   };
 }
 
-app.get('/subscriptions', authenticateToken, async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at
-       FROM subscriptions
-       WHERE user_id = $1
-       ORDER BY active DESC, position DESC, due_date NULLS LAST, id DESC`,
-      [req.user.id]
-    );
-    return res.json(result.rows);
-  } catch (err) {
-    console.error('Erro ao listar assinaturas:', err);
-    return res.status(500).json({ error: 'Erro ao listar assinaturas' });
-  }
+app.get('/subscriptions', auth, async (req, res) => {
+  const result = await db.query(
+    `SELECT id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at
+     FROM subscriptions
+     WHERE user_id = $1
+     ORDER BY active DESC, position DESC, due_date NULLS LAST, id DESC`,
+    [req.user.id]
+  );
+  return res.json(result.rows);
 });
 
-app.post('/subscriptions', authenticateToken, async (req, res) => {
+app.post('/subscriptions', auth, async (req, res) => {
   const sub = subscriptionPayload(req.body || {});
   if (!sub) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active, pay_with, billed_due, paid_dates)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
-      [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates]
-    );
-    await stampTablePosition('subscriptions', result.rows[0].id);
-    return res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Erro ao criar assinatura:', err);
-    return res.status(500).json({ error: 'Erro ao criar assinatura' });
-  }
+  const result = await db.query(
+    `INSERT INTO subscriptions (user_id, name, cycle, amount, due_date, notes, active, pay_with, billed_due, paid_dates)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
+    [req.user.id, sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates]
+  );
+  await stampRow('subscriptions', result.rows[0].id);
+  return res.status(201).json(result.rows[0]);
 });
 
-app.put('/subscriptions/:id', authenticateToken, async (req, res) => {
+app.put('/subscriptions/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   const sub = subscriptionPayload(req.body || {});
   if (!id || !sub) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `UPDATE subscriptions
-       SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6, pay_with = $7, billed_due = $8, paid_dates = $9
-       WHERE id = $10 AND user_id = $11
-       RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
-      [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates, id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Assinatura nao encontrada' });
-    return res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Erro ao editar assinatura:', err);
-    return res.status(500).json({ error: 'Erro ao editar assinatura' });
-  }
+  const result = await db.query(
+    `UPDATE subscriptions
+     SET name = $1, cycle = $2, amount = $3, due_date = $4, notes = $5, active = $6, pay_with = $7, billed_due = $8, paid_dates = $9
+     WHERE id = $10 AND user_id = $11
+     RETURNING id, name, cycle, amount, due_date::text AS due_date, notes, active, pay_with, billed_due::text AS billed_due, paid_dates, created_at`,
+    [sub.name, sub.cycle, sub.amount, sub.dueDate, sub.notes, sub.active, sub.payWith, sub.billedDue, sub.paidDates, id, req.user.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: 'Assinatura nao encontrada' });
+  return res.json(result.rows[0]);
 });
 
-app.delete('/subscriptions/:id', authenticateToken, async (req, res) => {
+app.delete('/subscriptions/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query('DELETE FROM subscriptions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Assinatura nao encontrada' });
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir assinatura:', err);
-    return res.status(500).json({ error: 'Erro ao excluir assinatura' });
-  }
+  const result = await db.query('DELETE FROM subscriptions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Assinatura nao encontrada' });
+  return res.json({ deleted: result.rowCount });
 });
 
 const SAVE_KINDS = {
@@ -2316,7 +2193,7 @@ function cleanDay(value) {
   return day;
 }
 
-function normalizePiggyEntries(value) {
+function cleanPiggyEntries(value) {
   if (!Array.isArray(value)) return undefined;
   const list = [];
   for (const raw of value.slice(0, 240)) {
@@ -2370,7 +2247,7 @@ async function listSavings(userId) {
   return result.rows;
 }
 
-async function insertPiggyEntries(userId, savingId, entries) {
+async function addPiggyEntries(userId, savingId, entries) {
   for (const entry of entries) {
     await db.query(
       `INSERT INTO piggy_entries (user_id, saving_id, amount, deposited_at)
@@ -2386,88 +2263,68 @@ async function insertPiggyEntries(userId, savingId, entries) {
   );
 }
 
-app.get('/savings', authenticateToken, async (req, res) => {
-  try {
-    return res.json(await listSavings(req.user.id));
-  } catch (err) {
-    console.error('Erro ao listar guardado:', err);
-    return res.status(500).json({ error: 'Erro ao listar guardado' });
-  }
+app.get('/savings', auth, async (req, res) => {
+  return res.json(await listSavings(req.user.id));
 });
 
-app.post('/savings', authenticateToken, async (req, res) => {
+app.post('/savings', auth, async (req, res) => {
   const item = savingPayload(req.body || {});
   if (!item) return res.status(400).json({ error: 'Dados invalidos' });
-  const listed = item.kind === 'piggy' ? normalizePiggyEntries(req.body?.entries) : undefined;
+  const listed = item.kind === 'piggy' ? cleanPiggyEntries(req.body?.entries) : undefined;
   if (listed === null) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `INSERT INTO savings (user_id, name, kind, category, amount, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
-      [req.user.id, item.name, item.kind, item.category, item.amount, item.notes]
-    );
-    const id = result.rows[0].id;
-    await stampTablePosition('savings', id);
-    if (item.kind === 'piggy') {
-      const entries = listed || (item.amount > 0 ? [{ amount: item.amount, deposited_at: cleanDay(req.body?.deposited_at) || saoPauloDay() }] : []);
-      if (entries.length) await insertPiggyEntries(req.user.id, id, entries);
-    }
-    const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
-    return res.status(201).json(saved);
-  } catch (err) {
-    console.error('Erro ao criar guardado:', err);
-    return res.status(500).json({ error: 'Erro ao criar guardado' });
+  const result = await db.query(
+    `INSERT INTO savings (user_id, name, kind, category, amount, notes)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [req.user.id, item.name, item.kind, item.category, item.amount, item.notes]
+  );
+  const id = result.rows[0].id;
+  await stampRow('savings', id);
+  if (item.kind === 'piggy') {
+    const entries = listed || (item.amount > 0 ? [{ amount: item.amount, deposited_at: cleanDay(req.body?.deposited_at) || saoPauloDay() }] : []);
+    if (entries.length) await addPiggyEntries(req.user.id, id, entries);
   }
+  const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
+  return res.status(201).json(saved);
 });
 
-app.put('/savings/:id', authenticateToken, async (req, res) => {
+app.put('/savings/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   const item = savingPayload(req.body || {});
   if (!id || !item) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const current = await db.query('SELECT kind, amount FROM savings WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (!current.rows[0]) return res.status(404).json({ error: 'Item nao encontrado' });
-    const amount = item.kind === 'piggy' ? current.rows[0].amount : item.amount;
-    await db.query(
-      `UPDATE savings
-       SET name = $1, kind = $2, category = $3, amount = $4, notes = $5
-       WHERE id = $6 AND user_id = $7`,
-      [item.name, item.kind, item.category, amount, item.notes, id, req.user.id]
-    );
-    if (item.kind === 'piggy') {
-      const count = await db.query('SELECT COUNT(*)::int AS n FROM piggy_entries WHERE saving_id = $1', [id]);
-      if (count.rows[0].n === 0 && Number(amount) > 0) {
-        await insertPiggyEntries(req.user.id, id, [{ amount: Number(amount), deposited_at: saoPauloDay() }]);
-      }
-    } else {
-      await db.query('DELETE FROM piggy_entries WHERE saving_id = $1 AND user_id = $2', [id, req.user.id]);
+  const current = await db.query('SELECT kind, amount FROM savings WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (!current.rows[0]) return res.status(404).json({ error: 'Item nao encontrado' });
+  const amount = item.kind === 'piggy' ? current.rows[0].amount : item.amount;
+  await db.query(
+    `UPDATE savings
+     SET name = $1, kind = $2, category = $3, amount = $4, notes = $5
+     WHERE id = $6 AND user_id = $7`,
+    [item.name, item.kind, item.category, amount, item.notes, id, req.user.id]
+  );
+  if (item.kind === 'piggy') {
+    const count = await db.query('SELECT COUNT(*)::int AS n FROM piggy_entries WHERE saving_id = $1', [id]);
+    if (count.rows[0].n === 0 && Number(amount) > 0) {
+      await addPiggyEntries(req.user.id, id, [{ amount: Number(amount), deposited_at: saoPauloDay() }]);
     }
-    const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
-    return res.json(saved);
-  } catch (err) {
-    console.error('Erro ao editar guardado:', err);
-    return res.status(500).json({ error: 'Erro ao editar guardado' });
+  } else {
+    await db.query('DELETE FROM piggy_entries WHERE saving_id = $1 AND user_id = $2', [id, req.user.id]);
   }
+  const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
+  return res.json(saved);
 });
 
-app.delete('/savings/:id', authenticateToken, async (req, res) => {
+app.delete('/savings/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query('DELETE FROM savings WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Item nao encontrado' });
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir guardado:', err);
-    return res.status(500).json({ error: 'Erro ao excluir guardado' });
-  }
+  const result = await db.query('DELETE FROM savings WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Item nao encontrado' });
+  return res.json({ deleted: result.rowCount });
 });
 
-app.post('/savings/:id/entries', authenticateToken, async (req, res) => {
+app.post('/savings/:id/entries', auth, async (req, res) => {
   const id = Number(req.params.id);
   const amount = Math.round(Number(req.body?.amount) * 100) / 100;
   const depositedAt = cleanDay(req.body?.deposited_at);
@@ -2475,45 +2332,35 @@ app.post('/savings/:id/entries', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
-  try {
-    const current = await db.query(
-      `SELECT id FROM savings WHERE id = $1 AND user_id = $2 AND kind = 'piggy'`,
-      [id, req.user.id]
-    );
-    if (!current.rows[0]) return res.status(404).json({ error: 'Cofrinho nao encontrado' });
-    await insertPiggyEntries(req.user.id, id, [{ amount, deposited_at: depositedAt }]);
-    const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
-    return res.status(201).json(saved);
-  } catch (err) {
-    console.error('Erro ao guardar no cofrinho:', err);
-    return res.status(500).json({ error: 'Erro ao guardar no cofrinho' });
-  }
+  const current = await db.query(
+    `SELECT id FROM savings WHERE id = $1 AND user_id = $2 AND kind = 'piggy'`,
+    [id, req.user.id]
+  );
+  if (!current.rows[0]) return res.status(404).json({ error: 'Cofrinho nao encontrado' });
+  await addPiggyEntries(req.user.id, id, [{ amount, deposited_at: depositedAt }]);
+  const saved = (await listSavings(req.user.id)).find((row) => row.id === id);
+  return res.status(201).json(saved);
 });
 
-app.delete('/savings/:id/entries/:entryId', authenticateToken, async (req, res) => {
+app.delete('/savings/:id/entries/:entryId', auth, async (req, res) => {
   const id = Number(req.params.id);
   const entryId = Number(req.params.entryId);
   if (!id || !entryId) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `DELETE FROM piggy_entries e
-       USING savings s
-       WHERE e.id = $1 AND e.saving_id = $2 AND s.id = e.saving_id AND s.user_id = $3 AND s.kind = 'piggy'`,
-      [entryId, id, req.user.id]
-    );
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Deposito nao encontrado' });
-    await db.query(
-      `UPDATE savings
-       SET amount = COALESCE((SELECT SUM(amount) FROM piggy_entries WHERE saving_id = $1), 0)
-       WHERE id = $1 AND user_id = $2`,
-      [id, req.user.id]
-    );
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir deposito:', err);
-    return res.status(500).json({ error: 'Erro ao excluir deposito' });
-  }
+  const result = await db.query(
+    `DELETE FROM piggy_entries e
+     USING savings s
+     WHERE e.id = $1 AND e.saving_id = $2 AND s.id = e.saving_id AND s.user_id = $3 AND s.kind = 'piggy'`,
+    [entryId, id, req.user.id]
+  );
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Deposito nao encontrado' });
+  await db.query(
+    `UPDATE savings
+     SET amount = COALESCE((SELECT SUM(amount) FROM piggy_entries WHERE saving_id = $1), 0)
+     WHERE id = $1 AND user_id = $2`,
+    [id, req.user.id]
+  );
+  return res.json({ deleted: result.rowCount });
 });
 
 const LOAN_DIRECTIONS = ['owe', 'owed'];
@@ -2568,73 +2415,53 @@ async function paidOnLoan(loanId) {
   return result.rows[0].paid;
 }
 
-app.get('/loans', authenticateToken, async (req, res) => {
-  try {
-    return res.json(await listLoans(req.user.id));
-  } catch (err) {
-    console.error('Erro ao listar emprestimos:', err);
-    return res.status(500).json({ error: 'Erro ao listar emprestimos' });
-  }
+app.get('/loans', auth, async (req, res) => {
+  return res.json(await listLoans(req.user.id));
 });
 
-app.post('/loans', authenticateToken, async (req, res) => {
+app.post('/loans', auth, async (req, res) => {
   const loan = loanPayload(req.body || {});
   if (!loan) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      `INSERT INTO person_loans (user_id, person, direction, amount, due_date, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
-      [req.user.id, loan.person, loan.direction, loan.amount, loan.dueDate, loan.notes]
-    );
-    const id = result.rows[0].id;
-    return res.status(201).json((await listLoans(req.user.id)).find((row) => row.id === id));
-  } catch (err) {
-    console.error('Erro ao criar emprestimo:', err);
-    return res.status(500).json({ error: 'Erro ao criar emprestimo' });
-  }
+  const result = await db.query(
+    `INSERT INTO person_loans (user_id, person, direction, amount, due_date, notes)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [req.user.id, loan.person, loan.direction, loan.amount, loan.dueDate, loan.notes]
+  );
+  const id = result.rows[0].id;
+  return res.status(201).json((await listLoans(req.user.id)).find((row) => row.id === id));
 });
 
-app.put('/loans/:id', authenticateToken, async (req, res) => {
+app.put('/loans/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   const loan = loanPayload(req.body || {});
   if (!id || !loan) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const owned = await db.query('SELECT id FROM person_loans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (!owned.rows[0]) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
-    if (loan.amount + 0.005 < (await paidOnLoan(id))) {
-      return res.status(400).json({ error: 'O valor não pode ser menor que o que já foi devolvido' });
-    }
-    await db.query(
-      `UPDATE person_loans
-       SET person = $1, direction = $2, amount = $3, due_date = $4, notes = $5
-       WHERE id = $6 AND user_id = $7`,
-      [loan.person, loan.direction, loan.amount, loan.dueDate, loan.notes, id, req.user.id]
-    );
-    return res.json((await listLoans(req.user.id)).find((row) => row.id === id));
-  } catch (err) {
-    console.error('Erro ao editar emprestimo:', err);
-    return res.status(500).json({ error: 'Erro ao editar emprestimo' });
+  const owned = await db.query('SELECT id FROM person_loans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (!owned.rows[0]) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
+  if (loan.amount + 0.005 < (await paidOnLoan(id))) {
+    return res.status(400).json({ error: 'O valor não pode ser menor que o que já foi devolvido' });
   }
+  await db.query(
+    `UPDATE person_loans
+     SET person = $1, direction = $2, amount = $3, due_date = $4, notes = $5
+     WHERE id = $6 AND user_id = $7`,
+    [loan.person, loan.direction, loan.amount, loan.dueDate, loan.notes, id, req.user.id]
+  );
+  return res.json((await listLoans(req.user.id)).find((row) => row.id === id));
 });
 
-app.delete('/loans/:id', authenticateToken, async (req, res) => {
+app.delete('/loans/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query('DELETE FROM person_loans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir emprestimo:', err);
-    return res.status(500).json({ error: 'Erro ao excluir emprestimo' });
-  }
+  const result = await db.query('DELETE FROM person_loans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
+  return res.json({ deleted: result.rowCount });
 });
 
-app.post('/loans/:id/payments', authenticateToken, async (req, res) => {
+app.post('/loans/:id/payments', auth, async (req, res) => {
   const id = Number(req.params.id);
   const amount = Math.round(Number(req.body?.amount) * 100) / 100;
   const paidOn = cleanDay(req.body?.paid_on);
@@ -2642,69 +2469,63 @@ app.post('/loans/:id/payments', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
-  try {
-    const owned = await db.query(
-      'SELECT amount::float8 AS amount FROM person_loans WHERE id = $1 AND user_id = $2',
-      [id, req.user.id]
-    );
-    if (!owned.rows[0]) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
-    const left = Math.round((owned.rows[0].amount - (await paidOnLoan(id))) * 100) / 100;
-    if (amount > left + 0.005) {
-      return res.status(400).json({ error: 'Valor maior do que o que falta' });
-    }
-    await db.query(
-      'INSERT INTO person_loan_payments (user_id, loan_id, amount, paid_on) VALUES ($1, $2, $3, $4)',
-      [req.user.id, id, amount, paidOn]
-    );
-    return res.status(201).json((await listLoans(req.user.id)).find((row) => row.id === id));
-  } catch (err) {
-    console.error('Erro ao registrar devolucao:', err);
-    return res.status(500).json({ error: 'Erro ao registrar devolucao' });
+  const owned = await db.query(
+    'SELECT amount::float8 AS amount FROM person_loans WHERE id = $1 AND user_id = $2',
+    [id, req.user.id]
+  );
+  if (!owned.rows[0]) return res.status(404).json({ error: 'Emprestimo nao encontrado' });
+  const left = Math.round((owned.rows[0].amount - (await paidOnLoan(id))) * 100) / 100;
+  if (amount > left + 0.005) {
+    return res.status(400).json({ error: 'Valor maior do que o que falta' });
   }
+  await db.query(
+    'INSERT INTO person_loan_payments (user_id, loan_id, amount, paid_on) VALUES ($1, $2, $3, $4)',
+    [req.user.id, id, amount, paidOn]
+  );
+  return res.status(201).json((await listLoans(req.user.id)).find((row) => row.id === id));
 });
 
-app.delete('/loans/:id/payments/:paymentId', authenticateToken, async (req, res) => {
+app.delete('/loans/:id/payments/:paymentId', auth, async (req, res) => {
   const id = Number(req.params.id);
   const paymentId = Number(req.params.paymentId);
   if (!id || !paymentId) return res.status(400).json({ error: 'Dados invalidos' });
 
-  try {
-    const result = await db.query(
-      'DELETE FROM person_loan_payments WHERE id = $1 AND loan_id = $2 AND user_id = $3',
-      [paymentId, id, req.user.id]
-    );
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Devolucao nao encontrada' });
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao excluir devolucao:', err);
-    return res.status(500).json({ error: 'Erro ao excluir devolucao' });
-  }
+  const result = await db.query(
+    'DELETE FROM person_loan_payments WHERE id = $1 AND loan_id = $2 AND user_id = $3',
+    [paymentId, id, req.user.id]
+  );
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Devolucao nao encontrada' });
+  return res.json({ deleted: result.rowCount });
 });
 
-telegram.setup(app, authenticateToken);
+telegram.setup(app, auth);
 
-app.delete('/transactions/:id', authenticateToken, async (req, res) => {
+app.delete('/transactions/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
 
   if (!id) {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
-  try {
-    const result = await db.query(
-      'DELETE FROM transactions WHERE id = $1 AND user_id = $2',
-      [id, req.user.id]
-    );
+  const result = await db.query(
+    'DELETE FROM transactions WHERE id = $1 AND user_id = $2',
+    [id, req.user.id]
+  );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Transacao nao encontrada' });
-    }
-
-    return res.json({ deleted: result.rowCount });
-  } catch (err) {
-    console.error('Erro ao deletar transacao:', err);
-    return res.status(500).json({ error: 'Erro ao deletar transacao' });
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: 'Transacao nao encontrada' });
   }
+
+  return res.json({ deleted: result.rowCount });
+});
+
+// o express 5 já joga pra cá qualquer erro de rota async, então as rotas não precisam de try/catch
+// JSON quebrado ou corpo grande demais chegam com status 4xx do body-parser
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error(`${req.method} ${req.path} quebrou:`, err);
+  res.status(status).json({ error: status >= 500 ? 'Erro no servidor' : 'Requisicao invalida' });
 });
 
 const UNVERIFIED_DAYS = 7;
