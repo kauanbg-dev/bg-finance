@@ -6,8 +6,11 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL nao definida no .env');
 }
 
+// o pg 9 vai deixar o sslmode=require sem checar o certificado, então já pede verify-full (some o aviso do log também)
+const dbUrl = process.env.DATABASE_URL.replace(/([?&]sslmode=)(prefer|require|verify-ca)\b/, '$1verify-full');
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
   // obs: se a URL tiver ?sslmode=..., o pg usa o da URL e ignora isso aqui
   ssl: { rejectUnauthorized: true },
 });
