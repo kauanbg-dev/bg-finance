@@ -1,0 +1,2 @@
+#!/bin/sh
+node -e "const fs=require('fs');const f=process.argv[1];const m=fs.readFileSync(f,'utf8').split('\n').filter(l=>!/^Co-authored-by: Cursor\b/i.test(l)).join('\n').replace(/\s+$/,'');fs.writeFileSync(f,m+'\n')" "$1"
