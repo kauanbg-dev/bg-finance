@@ -80,6 +80,8 @@ if (!JWT_SECRET) {
 }
 
 const BCRYPT_ROUNDS = 12;
+// login com e-mail que não existe compara contra isso, pra demorar o mesmo tanto que senha errada
+const FAKE_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), BCRYPT_ROUNDS);
 const SESSION_COOKIE = 'bg_session';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_JWT = '7d';
@@ -297,10 +299,17 @@ function validTransaction(description, amount, type) {
 }
 
 async function findCategoryId(userId, type, body) {
-  // TODO: conferir se a categoria é do usuário (ou padrão). hoje aceita qualquer id
   if (body.category_id !== undefined && body.category_id !== null && body.category_id !== '') {
     const id = Number(body.category_id);
-    if (!Number.isNaN(id)) return id;
+    if (!Number.isNaN(id)) {
+      // só aceita categoria padrão ou do próprio usuário
+      const own = await db.query(
+        'SELECT 1 FROM categories WHERE id = $1 AND (user_id IS NULL OR user_id = $2)',
+        [id, userId]
+      );
+      if (!own.rows[0]) throw Object.assign(new Error('categoria de outro usuario'), { status: 400 });
+      return id;
+    }
   }
 
   const name = String(body.category || '').trim();
@@ -711,12 +720,10 @@ async function login(req, res) {
 
     const user = result.rows[0];
 
-    // obs: sem usuário responde mais rápido que senha errada (não roda o bcrypt). baixo risco, fica assim por ora
+    const valid = await bcrypt.compare(password, user ? user.password : FAKE_HASH);
     if (!user) {
       return res.status(401).json({ error: 'Credenciais invalidas' });
     }
-
-    const valid = await bcrypt.compare(password, user.password);
 
     if (!valid) {
       noteFailedLogin(user, ip);
@@ -943,8 +950,22 @@ app.get('/auth/email-change', confirmEmailChange);
 app.get('/auth/providers', (req, res) => res.json({ google: GOOGLE_READY }));
 app.get('/auth/google', startGoogle);
 app.get('/auth/google/callback', googleCallback);
-app.post('/auth/logout', (req, res) => {
-  // TODO: só apaga o cookie. se alguém copiou o token ele vale até expirar (7 dias)
+// sobe o token_version: derruba esse token e os dos outros aparelhos também (não tem sessão por aparelho)
+app.post('/auth/logout', async (req, res) => {
+  const header = req.headers.authorization;
+  const token = (header && header.split(' ')[1]) || cookieValue(req, SESSION_COOKIE);
+  let payload = null;
+  try {
+    payload = token && jwt.verify(token, JWT_SECRET);
+  } catch {
+    // token vencido ou inválido, só limpa o cookie
+  }
+  if (payload?.id) {
+    await db.query(
+      'UPDATE users SET token_version = token_version + 1 WHERE id = $1 AND token_version = $2',
+      [payload.id, payload.ver]
+    );
+  }
   clearSession(res);
   return res.json({ ok: true });
 });

@@ -8,8 +8,8 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // TODO: ligar a verificação do certificado (o Neon tem cert válido), mas testar no Render antes
-  ssl: { rejectUnauthorized: false },
+  // obs: se a URL tiver ?sslmode=..., o pg usa o da URL e ignora isso aqui
+  ssl: { rejectUnauthorized: true },
 });
 
 pool.on('connect', () => {
