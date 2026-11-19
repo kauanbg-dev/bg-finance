@@ -33,25 +33,29 @@
   <link rel="icon" type="image/png" href="/icon-192.png?v=4362d3c0" sizes="192x192" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=bb57a1fe" />
   <title>BG Finance</title>
-  <link rel="preload" href="style.css?v=c9cef105" as="style">
-  <link rel="preload" href="script.js?v=646eeaed" as="script">
+  <link rel="preload" href="style.css?v=d78047f3" as="style">
+  <link rel="preload" href="script.js?v=366283e2" as="script">
   <link rel="preload" href="logo.png?v=20b704ea" as="image">
-  <link rel="stylesheet" href="style.css?v=c9cef105" />
+  <link rel="stylesheet" href="style.css?v=d78047f3" />
 </head>
 <body>
   <div class="boot-screen" id="boot-screen" aria-live="polite" aria-busy="true">
     <img class="boot-logo" src="logo.png?v=20b704ea" alt="" width="72" height="72">
-    <div class="boot-title">Finance</div>
+    <div class="boot-title">BG Finance</div>
     <div class="boot-spin" aria-hidden="true"></div>
     <p class="boot-hint">Carregando seus dados…</p>
   </div>
   <div class="container">
+    <div id="preview-banner" class="preview-banner" hidden>
+      <p>Você está na <strong>conta demo</strong>. Nada é salvo de verdade.</p>
+      <button type="button" class="btn secondary" id="preview-exit">Sair do demo</button>
+    </div>
     <div class="topbar">
       <div class="brand">
         <img class="brand-logo" src="logo.png?v=20b704ea" alt="BG logo" width="48" height="48">
         <div class="brand-text">
-          <h1>Finance</h1>
-          <p class="subtitle">Controle financeiro com visão de planilha</p>
+          <h1>BG Finance</h1>
+          <p class="subtitle">Saldo, cartões e metas no mesmo lugar</p>
         </div>
       </div>
 
@@ -109,20 +113,28 @@
         <span>Dívidas</span>
         <span class="nav-badge" id="debt-badge" hidden>0</span>
       </button>
-      <button type="button" class="nav-btn" data-view="subs" aria-label="Assinaturas">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-        <span>Assinaturas</span>
-        <span class="nav-badge" id="sub-badge" hidden>0</span>
-      </button>
-      <button type="button" class="nav-btn" data-view="savings" aria-label="Investimentos">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 18l5-5 4 3 7-8"/><path d="M15 8h5v5"/></svg>
-        <span class="nav-short">Investir</span>
-        <span class="nav-full">Investimentos</span>
-      </button>
-      <button type="button" class="nav-btn" data-view="settings" aria-label="Ajustes">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="17" r="2" fill="currentColor" stroke="none"/></svg>
-        <span>Ajustes</span>
-      </button>
+      <div class="nav-overflow">
+        <button type="button" class="nav-btn" id="nav-more-btn" aria-expanded="false" aria-controls="nav-more-list" aria-label="Mais">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+          <span>Mais</span>
+        </button>
+        <div id="nav-more-list" class="nav-more-list" hidden>
+          <button type="button" class="nav-btn" data-view="subs" aria-label="Assinaturas">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+            <span>Assinaturas</span>
+            <span class="nav-badge" id="sub-badge" hidden>0</span>
+          </button>
+          <button type="button" class="nav-btn" data-view="savings" aria-label="Investimentos">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 18l5-5 4 3 7-8"/><path d="M15 8h5v5"/></svg>
+            <span class="nav-short">Investir</span>
+            <span class="nav-full">Investimentos</span>
+          </button>
+          <button type="button" class="nav-btn" data-view="settings" aria-label="Ajustes">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="17" r="2" fill="currentColor" stroke="none"/></svg>
+            <span>Ajustes</span>
+          </button>
+        </div>
+      </div>
     </nav>
 
     <section id="view-home" class="app-view">
@@ -421,7 +433,13 @@
         </div>
       </form>
 
-      <p id="debt-empty" class="empty-note">Nenhuma dívida em aberto. Quando surgir uma fatura ou parcela, registre aqui.</p>
+      <div id="debt-empty" class="empty-panel">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 3h7l5 5v13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6M9 13h7M9 17h5"/></svg>
+          <span>Nenhuma dívida em aberto. Quando surgir uma fatura ou parcela, registre aqui.</span>
+          <button type="button" class="btn primary empty-cta" data-open-form="debt-form">Adicionar dívida</button>
+        </div>
+      </div>
 
       <div id="debt-months" class="month-stack"></div>
 
@@ -496,7 +514,13 @@
         </div>
       </form>
 
-      <p id="loan-empty" class="empty-note">Nenhum empréstimo em aberto. Se alguém te emprestou dinheiro, ou você emprestou para alguém, registre aqui.</p>
+      <div id="loan-empty" class="empty-panel">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
+          <span>Nenhum empréstimo em aberto. Se alguém te emprestou dinheiro, ou você emprestou para alguém, registre aqui.</span>
+          <button type="button" class="btn primary empty-cta" data-open-form="loan-form">Adicionar empréstimo</button>
+        </div>
+      </div>
 
       <div id="loan-list" class="debt-list"></div>
 
@@ -523,7 +547,13 @@
         <div id="plastic-host"></div>
         <button type="button" class="btn secondary plastic-edit" id="card-edit" hidden>Editar cartão</button>
       </div>
-      <p id="card-empty" class="empty-note">Nenhum cartão ainda. Cadastre a empresa, a bandeira e os 4 últimos números.</p>
+      <div id="card-empty" class="empty-panel">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M7 15h3"/></svg>
+          <span>Nenhum cartão ainda. Cadastre a empresa, a bandeira e os 4 últimos números.</span>
+          <button type="button" class="btn primary empty-cta" data-open-form="card-form">Adicionar cartão</button>
+        </div>
+      </div>
 
       <button type="button" class="add-launch add-launch-main" data-open-form="card-form">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -755,7 +785,13 @@
         </div>
       </form>
 
-      <p id="sub-empty" class="empty-note">Nenhuma assinatura ativa. Quando tiver um plano que cobra de novo, registre aqui.</p>
+      <div id="sub-empty" class="empty-panel">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+          <span>Nenhuma assinatura ativa. Quando tiver um plano que cobra de novo, registre aqui.</span>
+          <button type="button" class="btn primary empty-cta" data-open-form="sub-form">Adicionar assinatura</button>
+        </div>
+      </div>
 
       <div id="sub-months" class="month-stack"></div>
 
@@ -848,14 +884,20 @@
         </div>
       </form>
 
-      <p id="save-empty" class="empty-note">Nada guardado ainda. Registre um investimento ou um cofrinho para ver o total de cada categoria.</p>
+      <div id="save-empty" class="empty-panel">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 18l5-5 4 3 7-8"/><path d="M15 8h5v5"/></svg>
+          <span>Nada guardado ainda. Registre um investimento ou um cofrinho para ver o total de cada categoria.</span>
+          <button type="button" class="btn primary empty-cta" data-open-form="save-form">Adicionar</button>
+        </div>
+      </div>
       <div id="save-groups" class="month-stack"></div>
     </section>
 
     <section id="view-settings" class="app-view" hidden>
       <header class="view-head">
         <h2>Ajustes</h2>
-        <p class="muted">Conta, gráficos do painel, importação de extrato e Telegram.</p>
+        <p class="muted">Conta, aparência, gráficos do painel, importação de extrato e Telegram.</p>
       </header>
       <div class="sheet-card">
         <div class="chart-header">
@@ -863,6 +905,16 @@
           <p class="muted">Nome, e-mail, senha e foto da conta.</p>
         </div>
         <button type="button" class="btn secondary" id="edit-profile-settings">Editar cadastro</button>
+      </div>
+      <div class="sheet-card">
+        <div class="chart-header">
+          <h2>Aparência</h2>
+          <p class="muted">Claro ou escuro em qualquer tela.</p>
+        </div>
+        <div class="segmented" id="theme-prefs" role="group" aria-label="Tema">
+          <button type="button" class="seg-btn" data-theme="light">Claro</button>
+          <button type="button" class="seg-btn" data-theme="dark">Escuro</button>
+        </div>
       </div>
       <div class="sheet-card import-card">
         <div class="chart-header">
@@ -1077,7 +1129,7 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="password-policy.js?v=c53f9ec6" defer></script>
-  <script src="script.js?v=646eeaed" defer></script>
+  <script src="script.js?v=366283e2" defer></script>
   <script src="theme.js"></script>
   <script src="pwa.js?v=23a92089"></script>
 </body>

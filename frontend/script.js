@@ -270,9 +270,31 @@ async function leaveSession() {
   window.location.replace("login.html");
 }
 
+function exitPreview() {
+  try {
+    sessionStorage.removeItem(PREVIEW_FLAG);
+  } catch {
+    /* segue para o login */
+  }
+  window.location.replace("login.html");
+}
+
 logoutBtn?.addEventListener("click", () => {
+  if (previewMode) {
+    exitPreview();
+    return;
+  }
   leaveSession();
 });
+
+document.getElementById("preview-exit")?.addEventListener("click", () => {
+  exitPreview();
+});
+
+if (previewMode) {
+  const banner = document.getElementById("preview-banner");
+  if (banner) banner.hidden = false;
+}
 
 /* ---------- feedback ---------- */
 
@@ -3236,6 +3258,13 @@ function viewFromHash() {
   return VIEWS.has(name) ? name : "home";
 }
 
+function closeNavMore() {
+  const list = document.getElementById("nav-more-list");
+  const more = document.getElementById("nav-more-btn");
+  if (list) list.hidden = true;
+  if (more) more.setAttribute("aria-expanded", "false");
+}
+
 function showView(name, scroll = true) {
   if (!VIEWS.has(name)) name = "home";
   document.querySelectorAll(".app-view").forEach((el) => {
@@ -3247,6 +3276,9 @@ function showView(name, scroll = true) {
     if (on) btn.setAttribute("aria-current", "page");
     else btn.removeAttribute("aria-current");
   });
+  const moreBtn = document.getElementById("nav-more-btn");
+  if (moreBtn) moreBtn.classList.toggle("is-active", name === "subs" || name === "savings" || name === "settings");
+  closeNavMore();
   const nextHash = name === "home" ? "" : `#${name}`;
   if (location.hash !== nextHash) history.replaceState(null, "", location.pathname + location.search + nextHash);
   if (name === "home" && chartsNeedDraw) renderDashboard();
@@ -3275,6 +3307,24 @@ function bindNavigation() {
   document.querySelectorAll(".nav-btn[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => showView(btn.dataset.view));
   });
+  const moreBtn = document.getElementById("nav-more-btn");
+  const moreList = document.getElementById("nav-more-list");
+  if (moreBtn && moreList) {
+    moreBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = moreList.hidden;
+      moreList.hidden = !open;
+      moreBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    document.addEventListener("click", (event) => {
+      if (moreList.hidden) return;
+      if (moreList.contains(event.target) || moreBtn.contains(event.target)) return;
+      closeNavMore();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeNavMore();
+    });
+  }
   window.addEventListener("hashchange", () => showView(viewFromHash(), false));
   pinTabbar();
   window.visualViewport?.addEventListener("resize", pinTabbar, { passive: true });
@@ -5879,13 +5929,15 @@ async function removeCharge(card, charge) {
 }
 
 function bindCards() {
-  document.querySelector('[data-open-form="card-form"]')?.addEventListener("click", () => {
-    editingCardId = null;
-    document.getElementById("card-form")?.reset();
-    setCardBrand("visa");
-    setCardColor("#820ad1");
-    const submit = document.getElementById("card-submit");
-    if (submit) submit.textContent = "Salvar cartão";
+  document.querySelectorAll('[data-open-form="card-form"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingCardId = null;
+      document.getElementById("card-form")?.reset();
+      setCardBrand("visa");
+      setCardColor("#820ad1");
+      const submit = document.getElementById("card-submit");
+      if (submit) submit.textContent = "Salvar cartão";
+    });
   });
   document.querySelectorAll("#card-form [data-brand]").forEach((btn) => {
     btn.addEventListener("click", () => setCardBrand(btn.dataset.brand));

@@ -1,15 +1,23 @@
 # BG Finance
 
-Sistema de controle financeiro com login, categorias, gráficos e exportação CSV.
+Controle financeiro pessoal: saldo, cartões, dívidas, assinaturas, investimentos e gráficos no mesmo lugar.
 
 **Ao vivo:** [bg-finance.onrender.com](https://bg-finance.onrender.com/)
 
 ## Funcionalidades
 
-- Cadastro e login (JWT), com recuperação de senha por e-mail
-- Receitas e despesas com categoria e data
-- Filtros, ordenação e exportação CSV
-- Gráficos de fluxo mensal, categoria e evolução
+- Cadastro e login (JWT), recuperação de senha e confirmação por e-mail
+- Entrar com Google (opcional)
+- Painel de receitas e despesas com categoria, filtros, ordenação e exportação CSV
+- Gráficos de fluxo mensal, categoria, mix e evolução diária
+- Cartões de crédito com limite, fatura e extrato de compras
+- Dívidas e empréstimos entre pessoas
+- Assinaturas mensais ou anuais, com lembrete de vencimento
+- Investimentos e cofrinhos com histórico de depósitos
+- Importação de extrato CSV ou OFX (conta ou fatura)
+- Bot do Telegram para saldo, dívidas e lançamentos rápidos
+- Tema claro e escuro, PWA instalável
+- Modo prévia (`?preview=1`) com dados de demonstração
 
 ## Stack
 

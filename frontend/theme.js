@@ -19,14 +19,27 @@
   else document.body.appendChild(button);
 
   function paint() {
-    const light = root.dataset.theme === "light";
+    const theme = root.dataset.theme === "light" ? "light" : "dark";
+    const light = theme === "light";
     button.innerHTML = light ? moon : sun;
     button.setAttribute("aria-label", light ? "Usar modo escuro" : "Usar modo claro");
+    document.querySelectorAll("#theme-prefs .seg-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.theme === theme);
+    });
   }
 
   button.addEventListener("click", () => {
     apply(root.dataset.theme === "light" ? "dark" : "light");
     paint();
   });
+
+  document.getElementById("theme-prefs")?.addEventListener("click", (event) => {
+    const choice = event.target.closest("[data-theme]");
+    if (!choice) return;
+    apply(choice.dataset.theme === "light" ? "light" : "dark");
+    paint();
+  });
+
+  document.addEventListener("bg-theme", paint);
   paint();
 })();
