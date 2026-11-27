@@ -68,6 +68,7 @@ function detectIntent(text) {
     if (['assinatura', 'assinaturas', 'plano', 'planos'].includes(name)) return 'subs';
     if (['saldo', 'resumo'].includes(name)) return 'summary';
     if (['divida', 'dividas', 'aberto'].includes(name)) return 'open_debts';
+    if (['dica', 'dicas', 'economia', 'economizar', 'poupar', 'guardar', 'orcamento'].includes(name)) return 'tips';
     if (['ajuda', 'help', 'start', 'consultor'].includes(name)) return 'help';
   }
 
@@ -79,7 +80,10 @@ function detectIntent(text) {
   if (/(assinatura|netflix|spotify|plano mensal)/.test(q)) return 'subs';
   if (/(saldo|resumo|receita|despesa)/.test(q)) return 'summary';
   if (/(divida|em aberto|falta pagar)/.test(q)) return 'open_debts';
+  if (/(economiz|poupar|guardar dinheiro|cofrinho|orcamento|dica|como (eu )?fa[cç]o|reduzir gasto|gast(o|ar) menos|sobrar|investir)/.test(q)) return 'tips';
   if (/(ajuda|o que (voce|vc) (faz|sabe)|consultor)/.test(q)) return 'help';
+  // pergunta aberta: tenta dicas personalizadas em vez de só a lista de comandos
+  if (q.length >= 8) return 'tips';
   return 'help';
 }
 
@@ -106,9 +110,10 @@ function helpAnswer() {
     '• O que vence este mês?',
     '• Quando a fatura vence?',
     '• Quais assinaturas tenho?',
+    '• Quero economizar / me dá uma dica',
     '',
     'No Telegram também valem:',
-    '/proximo  /vence  /faturas  /saldo  /dividas',
+    '/proximo  /vence  /faturas  /saldo  /dividas  /dicas',
   ]);
 }
 
@@ -300,6 +305,129 @@ async function subscriptions(userId) {
   return answer(lines);
 }
 
+async function tips(userId) {
+  const now = spParts();
+  const today = `${monthKey(now.year, now.month)}-${String(now.day).padStart(2, '0')}`;
+  const [summary, cats, subs, debts, items] = await Promise.all([
+    db.query(
+      `SELECT
+         COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0)::float8 AS income,
+         COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0)::float8 AS expense
+       FROM transactions
+       WHERE user_id = $1
+         AND TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') =
+             TO_CHAR(NOW() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')`,
+      [userId]
+    ),
+    db.query(
+      `SELECT COALESCE(c.name, 'Outros') AS name, SUM(t.amount)::float8 AS total
+       FROM transactions t
+       LEFT JOIN categories c ON c.id = t.category_id
+       WHERE t.user_id = $1
+         AND t.type = 'expense'
+         AND TO_CHAR(t.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') =
+             TO_CHAR(NOW() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')
+       GROUP BY COALESCE(c.name, 'Outros')
+       ORDER BY total DESC
+       LIMIT 3`,
+      [userId]
+    ),
+    db.query(
+      `SELECT name, amount::float8 AS amount, cycle
+       FROM subscriptions
+       WHERE user_id = $1 AND active = TRUE
+       ORDER BY amount DESC
+       LIMIT 8`,
+      [userId]
+    ),
+    db.query(
+      `SELECT name, amount::float8 AS amount, due_date::text AS due_date
+       FROM debts
+       WHERE user_id = $1 AND paid_at IS NULL
+       ORDER BY due_date NULLS LAST, amount DESC
+       LIMIT 8`,
+      [userId]
+    ),
+    loadDueItems(userId),
+  ]);
+
+  const income = Number(summary.rows[0].income);
+  const expense = Number(summary.rows[0].expense);
+  const balance = income - expense;
+  const rate = income > 0 ? Math.round((balance / income) * 100) : null;
+  const tipsList = [];
+
+  if (income <= 0 && expense <= 0) {
+    tipsList.push('Lance receitas e despesas neste mês para eu montar dicas com os seus números.');
+  } else {
+    if (rate != null && rate < 10) {
+      tipsList.push(`Sua sobra este mês está em ${rate}%. Meta saudável: guardar pelo menos 10–20% da receita.`);
+    } else if (rate != null && rate >= 20) {
+      tipsList.push(`Boa: cerca de ${rate}% da receita sobrou. Dá para mandar parte disso para um cofrinho ou investimento.`);
+    } else if (balance < 0) {
+      tipsList.push(`As despesas passaram as receitas em ${plainMoney(Math.abs(balance))}. Priorize cortar o que não é essencial esta semana.`);
+    } else if (rate != null) {
+      tipsList.push(`Você está com ~${rate}% de sobra. Dá para subir isso revisando as maiores categorias abaixo.`);
+    }
+  }
+
+  if (cats.rows.length) {
+    const top = cats.rows[0];
+    tipsList.push(
+      `Maior gasto do mês: ${top.name} (${plainMoney(top.total)}). Tente um teto 10–15% menor na próxima quinzena.`
+    );
+    if (cats.rows[1]) {
+      tipsList.push(`Em seguida vem ${cats.rows[1].name} (${plainMoney(cats.rows[1].total)}).`);
+    }
+  }
+
+  const monthlySubs = subs.rows.reduce((sum, row) => {
+    const amount = Number(row.amount);
+    return sum + (row.cycle === 'yearly' ? amount / 12 : amount);
+  }, 0);
+  if (subs.rows.length) {
+    const pricey = subs.rows[0];
+    tipsList.push(
+      `Assinaturas ativas ~${plainMoney(monthlySubs)}/mês. A mais cara é ${pricey.name} (${plainMoney(pricey.amount)}): vale pausar ou trocar de plano?`
+    );
+  }
+
+  const late = items.filter((item) => isLate(item, today));
+  if (late.length) {
+    const lateTotal = late.reduce((sum, item) => sum + item.amount, 0);
+    tipsList.push(
+      `Há ${late.length} item(ns) atrasado(s) (~${plainMoney(lateTotal)}). Quitar isso antes de novos gastos evita juros e estresse.`
+    );
+  } else if (debts.rows.length) {
+    const debtTotal = debts.rows.reduce((sum, row) => sum + Number(row.amount), 0);
+    tipsList.push(
+      `Dívidas em aberto: ${plainMoney(debtTotal)}. Negocie a de maior juros primeiro e evite rolar fatura.`
+    );
+  }
+
+  const next = shiftMonth(now.year, now.month, 1);
+  const nextItems = items.filter((item) => inMonth(item, next.year, next.month));
+  if (nextItems.length) {
+    const nextTotal = nextItems.reduce((sum, item) => sum + item.amount, 0);
+    tipsList.push(
+      `No mês que vem já dá para prever ${plainMoney(nextTotal)} em vencimentos. Separe esse valor agora.`
+    );
+  }
+
+  if (!tipsList.length) {
+    tipsList.push('Ainda tenho pouco histórico. Lance mais movimentos e pergunte de novo.');
+  }
+
+  tipsList.push('Regra prática: pague o essencial, corte 1 assinatura ociosa e guarde um valor fixo todo mês — mesmo pequeno.');
+
+  return answer([
+    '**Dicas para economizar**',
+    `Resumo de ${monthLabel(now.year, now.month)}: receitas ${plainMoney(income)} · despesas ${plainMoney(expense)} · saldo ${plainMoney(balance)}`,
+    '',
+    ...tipsList.map((tip) => `• ${tip}`),
+  ]);
+}
+
 async function ask(userId, text) {
   const intent = detectIntent(text);
   switch (intent) {
@@ -315,6 +443,8 @@ async function ask(userId, text) {
       return monthSummary(userId);
     case 'open_debts':
       return openDebts(userId);
+    case 'tips':
+      return tips(userId);
     default:
       return helpAnswer();
   }

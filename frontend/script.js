@@ -654,6 +654,36 @@ function previewAdvisorAsk(message) {
       answer: `Receitas: ${moneyPt(income)}\nDespesas: ${moneyPt(expense)}\nSaldo: ${moneyPt(income - expense)}`,
     };
   }
+  if (
+    /economiz|poupar|guardar|dica|orcamento|reduzir|gast(o|ar) menos|sobrar|investir/.test(q)
+    || /^\/?dicas?\b/.test(q)
+    || q.trim().length >= 8
+  ) {
+    const month = todayKey.slice(0, 7);
+    const rows = allTransactions.filter((t) => String(t.date).slice(0, 7) === month);
+    const income = rows.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const expense = rows.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    const balance = income - expense;
+    const rate = income > 0 ? Math.round((balance / income) * 100) : null;
+    const byCat = new Map();
+    for (const row of rows.filter((t) => t.type === "expense")) {
+      const name = row.category_name || row.category || "Outros";
+      byCat.set(name, (byCat.get(name) || 0) + Number(row.amount));
+    }
+    const topCats = [...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const subTotal = activeSubs.reduce((sum, sub) => sum + Number(sub.amount), 0);
+    const tips = ["Dicas para economizar", `Receitas ${moneyPt(income)} · despesas ${moneyPt(expense)} · saldo ${moneyPt(balance)}`, ""];
+    if (rate != null && rate < 10) tips.push(`• Sobra de ${rate}% este mês. Tente guardar ao menos 10–20% da receita.`);
+    else if (rate != null) tips.push(`• Você está com ~${rate}% de sobra. Dá para mandar parte para um cofrinho.`);
+    if (topCats[0]) tips.push(`• Maior gasto: ${topCats[0][0]} (${moneyPt(topCats[0][1])}). Corte 10–15% nessa categoria.`);
+    if (activeSubs.length) tips.push(`• Assinaturas ~${moneyPt(subTotal)}/mês. Vale pausar alguma que quase não usa?`);
+    if (openDebts.length) {
+      const debtTotal = openDebts.reduce((sum, d) => sum + Number(d.amount), 0);
+      tips.push(`• Dívidas em aberto: ${moneyPt(debtTotal)}. Priorize a de maior juros.`);
+    }
+    tips.push("• Regra prática: pague o essencial, corte 1 gasto ocioso e guarde um valor fixo todo mês.");
+    return { answer: tips.join("\n") };
+  }
   return {
     answer: [
       "Consultor BG Finance",
@@ -661,7 +691,7 @@ function previewAdvisorAsk(message) {
       "Pergunte em português, por exemplo:",
       "• Quanto eu pago no próximo mês?",
       "• O que vence este mês?",
-      "• Quando a fatura vence?",
+      "• Quero economizar, me dá dicas",
     ].join("\n"),
   };
 }
@@ -5198,14 +5228,14 @@ function paintAdvisorChat() {
   delete log.dataset.lastDay;
   if (!advisorMessages.length) {
     pushAdvisorBubble(
-      "Olá! Pode perguntar qualquer coisa sobre suas contas: próximo mês, vencimentos, faturas, assinaturas ou saldo.",
+      "Olá! Pergunte o que quiser: próximo mês, vencimentos, faturas, assinaturas, saldo ou como economizar. Eu respondo com base nos seus números.",
       "bot",
       new Date().toISOString(),
       { skipSave: true }
     );
     advisorMessages = [{
       who: "bot",
-      text: "Olá! Pode perguntar qualquer coisa sobre suas contas: próximo mês, vencimentos, faturas, assinaturas ou saldo.",
+      text: "Olá! Pergunte o que quiser: próximo mês, vencimentos, faturas, assinaturas, saldo ou como economizar. Eu respondo com base nos seus números.",
       at: new Date().toISOString(),
     }];
     saveAdvisorChat();

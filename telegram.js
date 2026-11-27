@@ -210,6 +210,7 @@ function helpText() {
     '<code>/proximo</code> quanto pagar no mês que vem',
     '<code>/vence</code> o que vence este mês',
     '<code>/faturas</code> faturas de cartão em aberto',
+    '<code>/dicas</code> ideias para economizar',
     '<code>/extrato</code> últimos lançamentos',
     '<code>/gasto 49,90 mercado</code>',
     '<code>/receita 1500 salario</code>',
@@ -217,6 +218,7 @@ function helpText() {
     '',
     'Também dá para perguntar em português, tipo:',
     '<i>quanto eu pago no próximo mês?</i>',
+    '<i>quero economizar, me dá uma dica</i>',
   ].join('\n');
 }
 
@@ -405,6 +407,10 @@ async function handleMessage(message) {
     || parsed?.command === 'faturas'
     || parsed?.command === 'assinatura'
     || parsed?.command === 'assinaturas'
+    || parsed?.command === 'dica'
+    || parsed?.command === 'dicas'
+    || parsed?.command === 'economia'
+    || parsed?.command === 'economizar'
     || parsed?.command === 'consultor'
     || !parsed
   ) {
