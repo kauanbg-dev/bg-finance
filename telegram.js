@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('./database');
+const advisor = require('./advisor');
 
 const TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const ADMIN_CHAT_ID = String(process.env.ADMIN_TELEGRAM_CHAT_ID || '').trim();
@@ -206,10 +207,16 @@ function helpText() {
     '',
     '<code>/saldo</code> mês atual',
     '<code>/dividas</code> o que falta pagar',
+    '<code>/proximo</code> quanto pagar no mês que vem',
+    '<code>/vence</code> o que vence este mês',
+    '<code>/faturas</code> faturas de cartão em aberto',
     '<code>/extrato</code> últimos lançamentos',
     '<code>/gasto 49,90 mercado</code>',
     '<code>/receita 1500 salario</code>',
     '<code>/desvincular</code>',
+    '',
+    'Também dá para perguntar em português, tipo:',
+    '<i>quanto eu pago no próximo mês?</i>',
   ].join('\n');
 }
 
@@ -337,22 +344,18 @@ async function handleMessage(message) {
   }
 
   const parsed = parseCommand(text);
-  if (!parsed) {
+
+  if (parsed?.command === 'start' || parsed?.command === 'ajuda' || parsed?.command === 'help') {
     await send(chat.id, helpText());
     return;
   }
 
-  if (parsed.command === 'start' || parsed.command === 'ajuda' || parsed.command === 'help') {
-    await send(chat.id, helpText());
-    return;
-  }
-
-  if (parsed.command === 'id') {
+  if (parsed?.command === 'id') {
     await send(chat.id, `Seu chat id: <code>${chat.id}</code>`);
     return;
   }
 
-  if (parsed.command === 'vincular' || parsed.command === 'conectar') {
+  if (parsed?.command === 'vincular' || parsed?.command === 'conectar') {
     const code = parsed.rest.split(/\s+/)[0] || '';
     if (!/^[A-Za-z0-9]{6}$/.test(code)) {
       await send(chat.id, 'O código tem 6 caracteres. Gere outro em Ajustes e mande <code>/vincular CODIGO</code>.');
@@ -369,33 +372,49 @@ async function handleMessage(message) {
     return;
   }
 
-  if (parsed.command === 'desvincular' || parsed.command === 'sair') {
+  if (parsed?.command === 'desvincular' || parsed?.command === 'sair') {
     await db.query('UPDATE users SET telegram_chat_id = NULL WHERE id = $1', [user.id]);
     await send(chat.id, 'Conta desvinculada deste chat.');
     return;
   }
-  if (parsed.command === 'saldo' || parsed.command === 'resumo') {
+  if (parsed?.command === 'saldo' || parsed?.command === 'resumo') {
     await send(chat.id, await monthSummary(user.id));
     return;
   }
-  if (parsed.command === 'dividas' || parsed.command === 'divida') {
+  if (parsed?.command === 'dividas' || parsed?.command === 'divida') {
     await send(chat.id, await debtList(user.id));
     return;
   }
-  if (parsed.command === 'extrato') {
+  if (parsed?.command === 'extrato') {
     await send(chat.id, await recentLines(user.id));
     return;
   }
-  if (parsed.command === 'gasto' || parsed.command === 'despesa') {
+  if (parsed?.command === 'gasto' || parsed?.command === 'despesa') {
     await send(chat.id, await addTransaction(user.id, 'expense', parsed.rest));
     return;
   }
-  if (parsed.command === 'receita' || parsed.command === 'entrada') {
+  if (parsed?.command === 'receita' || parsed?.command === 'entrada') {
     await send(chat.id, await addTransaction(user.id, 'income', parsed.rest));
     return;
   }
+  if (
+    parsed?.command === 'proximo'
+    || parsed?.command === 'vence'
+    || parsed?.command === 'mes'
+    || parsed?.command === 'fatura'
+    || parsed?.command === 'faturas'
+    || parsed?.command === 'assinatura'
+    || parsed?.command === 'assinaturas'
+    || parsed?.command === 'consultor'
+    || !parsed
+  ) {
+    const result = await advisor.ask(user.id, text);
+    await send(chat.id, result.textHtml);
+    return;
+  }
 
-  await send(chat.id, helpText());
+  const result = await advisor.ask(user.id, text);
+  await send(chat.id, result.textHtml);
 }
 
 async function onUpdate(update) {

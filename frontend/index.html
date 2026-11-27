@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <meta name="theme-color" content="#0f172a" />
-  <script src="theme-boot.js?v=d9ff8c28"></script>
+  <script src="theme-boot.js?v=4baeac14"></script>
   <style>
     .boot-screen{
       position:fixed;inset:0;z-index:9999;
@@ -28,15 +28,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="BG Finance" />
-  <link rel="manifest" href="/manifest.webmanifest?v=fabb9039" />
+  <link rel="manifest" href="/manifest.webmanifest?v=96b4e7d6" />
   <link rel="icon" href="/favicon.ico?v=68c4c9e5" sizes="any" />
   <link rel="icon" type="image/png" href="/icon-192.png?v=4362d3c0" sizes="192x192" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=bb57a1fe" />
   <title>BG Finance</title>
-  <link rel="preload" href="style.css?v=d78047f3" as="style">
-  <link rel="preload" href="script.js?v=366283e2" as="script">
+  <link rel="preload" href="style.css?v=00d5f730" as="style">
+  <link rel="preload" href="script.js?v=b1ae5e03" as="script">
   <link rel="preload" href="logo.png?v=20b704ea" as="image">
-  <link rel="stylesheet" href="style.css?v=d78047f3" />
+  <link rel="stylesheet" href="style.css?v=00d5f730" />
 </head>
 <body>
   <div class="boot-screen" id="boot-screen" aria-live="polite" aria-busy="true">
@@ -128,6 +128,10 @@
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 18l5-5 4 3 7-8"/><path d="M15 8h5v5"/></svg>
             <span class="nav-short">Investir</span>
             <span class="nav-full">Investimentos</span>
+          </button>
+          <button type="button" class="nav-btn" data-view="advisor" aria-label="Consultor">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>
+            <span>Consultor</span>
           </button>
           <button type="button" class="nav-btn" data-view="settings" aria-label="Ajustes">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="17" r="2" fill="currentColor" stroke="none"/></svg>
@@ -894,6 +898,27 @@
       <div id="save-groups" class="month-stack"></div>
     </section>
 
+    <section id="view-advisor" class="app-view" hidden>
+      <header class="view-head">
+        <h2>Consultor</h2>
+        <p class="muted">Pergunte quanto pagar no próximo mês, o que vence ou como está a fatura.</p>
+      </header>
+      <div class="advisor-shell">
+        <div id="advisor-log" class="advisor-log" aria-live="polite"></div>
+        <div class="advisor-chips" role="group" aria-label="Atalhos">
+          <button type="button" class="btn secondary advisor-chip" data-ask="Quanto eu pago no próximo mês?">Próximo mês</button>
+          <button type="button" class="btn secondary advisor-chip" data-ask="O que vence este mês?">O que vence</button>
+          <button type="button" class="btn secondary advisor-chip" data-ask="Quando a fatura vence?">Faturas</button>
+          <button type="button" class="btn secondary advisor-chip" data-ask="Quais assinaturas eu tenho?">Assinaturas</button>
+        </div>
+        <form id="advisor-form" class="advisor-form">
+          <label class="sr-only" for="advisor-input">Pergunta</label>
+          <input type="text" id="advisor-input" maxlength="400" placeholder="Ex: quanto eu pago no mês que vem?" autocomplete="off" required>
+          <button class="btn primary" type="submit" id="advisor-send">Perguntar</button>
+        </form>
+      </div>
+    </section>
+
     <section id="view-settings" class="app-view" hidden>
       <header class="view-head">
         <h2>Ajustes</h2>
@@ -957,8 +982,12 @@
         <ul class="tg-commands">
           <li><code>/saldo</code> receitas, despesas e saldo do mês</li>
           <li><code>/dividas</code> o que ainda está em aberto</li>
+          <li><code>/proximo</code> quanto pagar no mês que vem</li>
+          <li><code>/vence</code> o que vence este mês</li>
+          <li><code>/faturas</code> faturas de cartão</li>
           <li><code>/gasto 49,90 mercado</code> lança uma despesa</li>
           <li><code>/receita 1500 salario</code> lança uma receita</li>
+          <li>Ou pergunte em português, tipo “quanto eu pago no próximo mês?”</li>
         </ul>
         <div id="telegram-code" class="tg-code" hidden>
           <span>Mande este código para o bot</span>
@@ -1128,9 +1157,9 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script src="password-policy.js?v=c53f9ec6" defer></script>
-  <script src="script.js?v=366283e2" defer></script>
+  <script src="password-policy.js?v=6887709a" defer></script>
+  <script src="script.js?v=b1ae5e03" defer></script>
   <script src="theme.js"></script>
-  <script src="pwa.js?v=23a92089"></script>
+  <script src="pwa.js?v=dc7e2f75"></script>
 </body>
 </html>

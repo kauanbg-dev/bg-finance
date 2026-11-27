@@ -10,6 +10,7 @@ const path = require('path');
 
 const db = require('./database');
 const telegram = require('./telegram');
+const advisor = require('./advisor');
 const { passwordProblem } = require('./frontend/password-policy');
 
 const app = express();
@@ -2593,6 +2594,19 @@ app.delete('/loans/:id/payments/:paymentId', auth, async (req, res) => {
 });
 
 telegram.setup(app, auth);
+
+app.post('/advisor/ask', auth, async (req, res) => {
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ error: 'Escreva uma pergunta' });
+  if (message.length > 400) return res.status(400).json({ error: 'Pergunta muito longa' });
+  try {
+    const result = await advisor.ask(req.user.id, message);
+    return res.json({ answer: result.textPlain, intent: advisor.detectIntent(message) });
+  } catch (err) {
+    console.error('Erro no consultor:', err);
+    return res.status(500).json({ error: 'Nao foi possivel consultar agora' });
+  }
+});
 
 app.delete('/transactions/:id', auth, async (req, res) => {
   const id = Number(req.params.id);

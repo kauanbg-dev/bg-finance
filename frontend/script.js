@@ -541,7 +541,135 @@ function shiftDay(iso, delta) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function previewAdvisorAsk(message) {
+  seedPreviewCards();
+  seedPreviewDebts();
+  seedPreviewSubs();
+  if (!previewLoans) previewApi("GET", "/loans");
+  const q = String(message || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+  const moneyPt = (value) =>
+    Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const dayPt = (raw) => {
+    const day = String(raw || "").slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day.slice(8, 10)}/${day.slice(5, 7)}` : "sem data";
+  };
+  const now = new Date();
+  const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const thisKey = ym(now);
+  const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const nextKey = ym(next);
+  const todayKey = today();
+  const openDebts = previewDebts.filter((d) => !d.paid_at);
+  const activeSubs = previewSubs.filter((s) => s.active !== false);
+  const openLoans = (previewLoans || []).filter((loan) => {
+    const paid = (loan.payments || []).reduce((sum, p) => sum + Number(p.amount), 0);
+    return paid < Number(loan.amount);
+  });
+
+  const pack = (key) => {
+    const items = [];
+    for (const debt of openDebts) {
+      const due = String(debt.due_date || "").slice(0, 7);
+      if (due !== key) continue;
+      items.push({
+        name: debt.name,
+        amount: Number(debt.amount),
+        due: debt.due_date,
+        label: debt.kind === "credit_card" || /fatura/i.test(debt.name) ? "Fatura" : "Dívida",
+      });
+    }
+    for (const sub of activeSubs) {
+      const due = String(sub.due_date || "").slice(0, 7);
+      if (due !== key) continue;
+      items.push({ name: sub.name, amount: Number(sub.amount), due: sub.due_date, label: "Assinatura" });
+    }
+    for (const loan of openLoans) {
+      const due = String(loan.due_date || "").slice(0, 7);
+      if (due !== key) continue;
+      items.push({
+        name: loan.direction === "owe" ? `Empréstimo (${loan.person})` : `${loan.person} me deve`,
+        amount: Number(loan.amount),
+        due: loan.due_date,
+        label: loan.direction === "owe" ? "Eu devo" : "Me devem",
+      });
+    }
+    items.sort((a, b) => String(a.due).localeCompare(String(b.due)));
+    return items;
+  };
+
+  if (/proximo|mes que vem|quanto .*pag/.test(q) || /^\/?proximo\b/.test(q)) {
+    const items = pack(nextKey);
+    if (!items.length) return { answer: "Nada com vencimento no próximo mês." };
+    const total = items.reduce((sum, item) => sum + item.amount, 0);
+    return {
+      answer: [
+        `Próximo mês: ${moneyPt(total)}`,
+        ...items.map((item) => `• ${item.name} — ${moneyPt(item.amount)} (${dayPt(item.due)}) · ${item.label}`),
+      ].join("\n"),
+    };
+  }
+  if (/vence|este mes|esse mes|atrasad/.test(q) || /^\/?(vence|mes)\b/.test(q)) {
+    const items = pack(thisKey);
+    if (!items.length) return { answer: "Nada com vencimento neste mês." };
+    const total = items.reduce((sum, item) => sum + item.amount, 0);
+    return {
+      answer: [
+        `Este mês: ${moneyPt(total)}`,
+        ...items.map((item) => {
+          const late = String(item.due).slice(0, 10) < todayKey ? " · atrasada" : "";
+          return `• ${item.name} — ${moneyPt(item.amount)} (${dayPt(item.due)}${late}) · ${item.label}`;
+        }),
+      ].join("\n"),
+    };
+  }
+  if (/fatura|cartao/.test(q) || /^\/?faturas?\b/.test(q)) {
+    const rows = openDebts.filter((d) => d.kind === "credit_card" || /fatura/i.test(d.name));
+    if (!rows.length) return { answer: "Nenhuma fatura de cartão em aberto." };
+    const total = rows.reduce((sum, row) => sum + Number(row.amount), 0);
+    return {
+      answer: [
+        `Faturas em aberto: ${moneyPt(total)}`,
+        ...rows.map((row) => `• ${row.name} — ${moneyPt(row.amount)} (vence ${dayPt(row.due_date)})`),
+      ].join("\n"),
+    };
+  }
+  if (/assinatura/.test(q)) {
+    if (!activeSubs.length) return { answer: "Nenhuma assinatura ativa." };
+    return {
+      answer: [
+        "Assinaturas ativas",
+        ...activeSubs.map((sub) => `• ${sub.name} — ${moneyPt(sub.amount)} (próxima ${dayPt(sub.due_date)})`),
+      ].join("\n"),
+    };
+  }
+  if (/saldo|resumo/.test(q)) {
+    const month = todayKey.slice(0, 7);
+    const rows = allTransactions.filter((t) => String(t.date).slice(0, 7) === month);
+    const income = rows.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const expense = rows.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    return {
+      answer: `Receitas: ${moneyPt(income)}\nDespesas: ${moneyPt(expense)}\nSaldo: ${moneyPt(income - expense)}`,
+    };
+  }
+  return {
+    answer: [
+      "Consultor BG Finance",
+      "",
+      "Pergunte em português, por exemplo:",
+      "• Quanto eu pago no próximo mês?",
+      "• O que vence este mês?",
+      "• Quando a fatura vence?",
+    ].join("\n"),
+  };
+}
+
 function previewApi(method, url, body) {
+  if (url === "/advisor/ask" && method === "POST") {
+    return previewAdvisorAsk(body?.message || "");
+  }
   if (url === "/telegram") {
     if (method === "DELETE") {
       previewTelegram.linked = false;
@@ -3240,7 +3368,7 @@ function bindEntryForms() {
 
 /* ---------- menu, dívidas e ajustes ---------- */
 
-const VIEWS = new Set(["home", "debts", "subs", "savings", "settings", "cards"]);
+const VIEWS = new Set(["home", "debts", "subs", "savings", "settings", "cards", "advisor"]);
 let debts = [];
 let editingDebtId = null;
 
@@ -3277,13 +3405,19 @@ function showView(name, scroll = true) {
     else btn.removeAttribute("aria-current");
   });
   const moreBtn = document.getElementById("nav-more-btn");
-  if (moreBtn) moreBtn.classList.toggle("is-active", name === "subs" || name === "savings" || name === "settings");
+  if (moreBtn) {
+    moreBtn.classList.toggle(
+      "is-active",
+      name === "subs" || name === "savings" || name === "settings" || name === "advisor"
+    );
+  }
   closeNavMore();
   const nextHash = name === "home" ? "" : `#${name}`;
   if (location.hash !== nextHash) history.replaceState(null, "", location.pathname + location.search + nextHash);
   if (name === "home" && chartsNeedDraw) renderDashboard();
   else if (name === "home") requestAnimationFrame(() => Object.values(charts).forEach((chart) => chart?.resize()));
   if (name === "settings") loadTelegram();
+  if (name === "advisor") ensureAdvisorWelcome();
   if (scroll) window.scrollTo(0, 0);
 }
 
@@ -4864,6 +4998,58 @@ function bindSubscriptions() {
   });
 }
 
+let advisorReady = false;
+
+function pushAdvisorBubble(text, who) {
+  const log = document.getElementById("advisor-log");
+  if (!log) return;
+  const bubble = document.createElement("div");
+  bubble.className = `advisor-bubble is-${who}`;
+  bubble.textContent = text;
+  log.appendChild(bubble);
+  log.scrollTop = log.scrollHeight;
+}
+
+function ensureAdvisorWelcome() {
+  const log = document.getElementById("advisor-log");
+  if (!log || log.childElementCount) return;
+  pushAdvisorBubble(
+    "Olá! Posso dizer quanto você paga no próximo mês, o que vence agora e como está a fatura. Use um atalho ou escreva a pergunta.",
+    "bot"
+  );
+}
+
+async function askAdvisor(message) {
+  const text = String(message || "").trim();
+  if (!text) return;
+  const input = document.getElementById("advisor-input");
+  const send = document.getElementById("advisor-send");
+  pushAdvisorBubble(text, "user");
+  if (input) input.value = "";
+  if (send) send.disabled = true;
+  try {
+    const result = await api("POST", "/advisor/ask", { message: text });
+    pushAdvisorBubble(result?.answer || "Não consegui montar a resposta.", "bot");
+  } catch (err) {
+    pushAdvisorBubble(friendlyError(err, "Não foi possível consultar agora."), "bot");
+  } finally {
+    if (send) send.disabled = false;
+    input?.focus();
+  }
+}
+
+function bindAdvisor() {
+  if (advisorReady) return;
+  advisorReady = true;
+  document.getElementById("advisor-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    askAdvisor(document.getElementById("advisor-input")?.value || "");
+  });
+  document.querySelectorAll(".advisor-chip[data-ask]").forEach((btn) => {
+    btn.addEventListener("click", () => askAdvisor(btn.dataset.ask));
+  });
+}
+
 let telegramState = { configured: false, linked: false, username: "" };
 
 function paintTelegram() {
@@ -4881,7 +5067,7 @@ function paintTelegram() {
   }
   const bot = telegramState.username ? `@${telegramState.username}` : "o bot";
   status.textContent = telegramState.linked
-    ? `Conta ligada a ${bot}. Dá para lançar gasto e ver o saldo por lá.`
+    ? `Conta ligada a ${bot}. Dá para perguntar quanto pagar, ver faturas e lançar gastos por lá.`
     : `Gere um código e envie para ${bot} com /vincular.`;
   link.hidden = false;
   unlink.hidden = !telegramState.linked;
@@ -6131,6 +6317,7 @@ window.addEventListener("pageshow", (event) => {
   bindSavings();
   bindCards();
   bindTelegram();
+  bindAdvisor();
   const start = viewFromHash();
   if (start !== "home") showView(start, false);
   if (previewMode) allTransactions = demoTransactions();
