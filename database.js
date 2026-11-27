@@ -39,6 +39,8 @@ async function initDatabase() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_chat_id_key ON users (telegram_chat_id) WHERE telegram_chat_id IS NOT NULL`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_wa_id VARCHAR(32)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_whatsapp_wa_id_key ON users (whatsapp_wa_id) WHERE whatsapp_wa_id IS NOT NULL`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_key ON users (google_sub) WHERE google_sub IS NOT NULL`);
   // o DEFAULT só preenche quem já existia antes da coluna, aí as contas antigas continuam entrando
@@ -47,6 +49,17 @@ async function initDatabase() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS telegram_links (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash CHAR(64) NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS whatsapp_links (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       code_hash CHAR(64) NOT NULL,

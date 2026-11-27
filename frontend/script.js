@@ -432,6 +432,7 @@ let previewProfile = {
 
 let previewSettings = { charts: { flow: true, category: true, mix: true, daily: true } };
 let previewTelegram = { linked: false };
+let previewWhatsapp = { linked: false };
 let previewDebts = [];
 let previewSubs = [];
 let previewSavings = [];
@@ -679,6 +680,26 @@ function previewApi(method, url, body) {
   }
   if (url === "/telegram/link" && method === "POST") {
     return { code: "DEMO42", username: "bgfinance_bot", expires_in: 900 };
+  }
+  if (url === "/whatsapp") {
+    if (method === "DELETE") {
+      previewWhatsapp.linked = false;
+      return { linked: false };
+    }
+    return {
+      configured: true,
+      linked: previewWhatsapp.linked,
+      display_number: "5511999999999",
+      link: "https://wa.me/5511999999999",
+    };
+  }
+  if (url === "/whatsapp/link" && method === "POST") {
+    return {
+      code: "DEMO42",
+      display_number: "5511999999999",
+      link: "https://wa.me/5511999999999",
+      expires_in: 900,
+    };
   }
   if (url === "/me") {
     if (method === "DELETE") return { deleted: true };
@@ -3416,7 +3437,10 @@ function showView(name, scroll = true) {
   if (location.hash !== nextHash) history.replaceState(null, "", location.pathname + location.search + nextHash);
   if (name === "home" && chartsNeedDraw) renderDashboard();
   else if (name === "home") requestAnimationFrame(() => Object.values(charts).forEach((chart) => chart?.resize()));
-  if (name === "settings") loadTelegram();
+  if (name === "settings") {
+    loadTelegram();
+    loadWhatsapp();
+  }
   if (name === "advisor") ensureAdvisorWelcome();
   if (scroll) window.scrollTo(0, 0);
 }
@@ -5129,6 +5153,89 @@ function bindTelegram() {
   });
 }
 
+let whatsappState = { configured: false, linked: false, display_number: "", link: "" };
+
+function paintWhatsapp() {
+  const status = document.getElementById("whatsapp-status");
+  const linkBtn = document.getElementById("whatsapp-link");
+  const unlink = document.getElementById("whatsapp-unlink");
+  if (!status || !linkBtn || !unlink) return;
+  if (!whatsappState || !whatsappState.configured) {
+    status.textContent = "O WhatsApp ainda não está ativo neste servidor.";
+    linkBtn.hidden = true;
+    unlink.hidden = true;
+    const openBot = document.getElementById("whatsapp-open");
+    if (openBot) openBot.hidden = true;
+    return;
+  }
+  status.textContent = whatsappState.linked
+    ? "Conta ligada ao WhatsApp. Dá para perguntar quanto pagar, ver faturas e lançar gastos por lá."
+    : "Gere um código e envie no WhatsApp: vincular CODIGO.";
+  linkBtn.hidden = false;
+  unlink.hidden = !whatsappState.linked;
+  const open = document.getElementById("whatsapp-open");
+  if (open) {
+    if (whatsappState.link) {
+      open.href = whatsappState.link;
+      open.hidden = false;
+    } else {
+      open.hidden = true;
+    }
+  }
+}
+
+async function loadWhatsapp() {
+  const status = document.getElementById("whatsapp-status");
+  if (!status) return;
+  try {
+    const data = await api("GET", "/whatsapp");
+    whatsappState = {
+      configured: Boolean(data?.configured),
+      linked: Boolean(data?.linked),
+      display_number: data?.display_number || "",
+      link: data?.link || "",
+    };
+    paintWhatsapp();
+  } catch (err) {
+    status.textContent = friendlyError(err, "Não foi possível carregar o WhatsApp agora. Tente de novo em instantes.");
+  }
+}
+
+function bindWhatsapp() {
+  document.getElementById("whatsapp-link")?.addEventListener("click", async () => {
+    const button = document.getElementById("whatsapp-link");
+    button.disabled = true;
+    try {
+      const data = await api("POST", "/whatsapp/link");
+      const box = document.getElementById("whatsapp-code");
+      document.getElementById("whatsapp-code-value").textContent = data.code;
+      const where = data.link ? "no número do BG Finance" : "no WhatsApp do app";
+      document.getElementById("whatsapp-code-hint").textContent = `Abra a conversa ${where} e envie: vincular ${data.code}. Vale por 15 minutos.`;
+      box.hidden = false;
+      if (data.link) {
+        whatsappState = { ...whatsappState, link: data.link, display_number: data.display_number || whatsappState.display_number };
+        paintWhatsapp();
+      }
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("whatsapp-unlink")?.addEventListener("click", async () => {
+    try {
+      await api("DELETE", "/whatsapp");
+      whatsappState = { ...whatsappState, linked: false };
+      document.getElementById("whatsapp-code").hidden = true;
+      paintWhatsapp();
+      toast("WhatsApp desvinculado");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
+}
+
 const SAVE_CATS = {
   investment: ["Renda fixa", "Ações", "Fundos", "Tesouro", "Cripto", "Previdência", "Outros"],
   piggy: ["Viagem", "Casa", "Carro", "Estudos", "Presentes", "Emergência", "Dinheiro guardado", "Outros"],
@@ -6317,6 +6424,7 @@ window.addEventListener("pageshow", (event) => {
   bindSavings();
   bindCards();
   bindTelegram();
+  bindWhatsapp();
   bindAdvisor();
   const start = viewFromHash();
   if (start !== "home") showView(start, false);

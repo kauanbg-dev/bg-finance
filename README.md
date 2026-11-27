@@ -15,8 +15,8 @@ Controle financeiro pessoal: saldo, cartões, dívidas, assinaturas, investiment
 - Assinaturas mensais ou anuais, com lembrete de vencimento
 - Investimentos e cofrinhos com histórico de depósitos
 - Importação de extrato CSV ou OFX (conta ou fatura)
-- Bot do Telegram para saldo, dívidas e lançamentos rápidos
-- Consultor financeiro (app + Telegram): próximo mês a pagar, vencimentos e faturas
+- Bot do Telegram e WhatsApp para saldo, dívidas e lançamentos rápidos
+- Consultor financeiro (app + Telegram + WhatsApp): próximo mês a pagar, vencimentos e faturas
 - Tema claro e escuro, PWA instalável
 - Modo prévia (`?preview=1`) com dados de demonstração
 
@@ -69,3 +69,9 @@ Crie um bot no [@BotFather](https://t.me/BotFather) e coloque o token em `TELEGR
 No app, em Ajustes, a pessoa gera um código e envia `/vincular CODIGO` para o bot. Depois disso valem `/saldo`, `/dividas`, `/proximo`, `/vence`, `/faturas`, `/gasto 49,90 mercado` e `/receita 1500 salario`. Também dá para perguntar em português (ex.: “quanto eu pago no próximo mês?”). O mesmo consultor existe no app, em Mais → Consultor.
 
 Para receber um aviso privado a cada login, mande `/id` para o bot e coloque o número em `ADMIN_TELEGRAM_CHAT_ID` no Render. Só esse chat recebe nome, e-mail e horário. O mesmo chat é avisado quando uma conta leva 5 senhas erradas em 15 minutos. Sem a variável, o login segue normal e ninguém é avisado.
+
+## WhatsApp
+
+Usa a [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api) da Meta. No app Meta, copie o token e o Phone number ID para `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID`. Cadastre o webhook `https://bg-finance.onrender.com/whatsapp/webhook` com o campo `messages` e o mesmo `WHATSAPP_VERIFY_TOKEN` (ou deixe a variável vazia e use o token derivado do `JWT_SECRET`). Coloque também `WHATSAPP_APP_SECRET` (App Secret) para validar a assinatura do POST. `WHATSAPP_DISPLAY_NUMBER` (DDI+número, só dígitos) monta o botão “Abrir conversa” no Ajustes.
+
+No app, em Ajustes, a pessoa gera um código e manda `vincular CODIGO` no WhatsApp do número do app. Os mesmos comandos do consultor valem (`saldo`, `proximo`, `vence`, `faturas`, `gasto…`) e perguntas em português. Sem as variáveis, o canal fica desligado e o restante do app segue normal.

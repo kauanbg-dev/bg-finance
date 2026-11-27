@@ -34,7 +34,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=bb57a1fe" />
   <title>BG Finance</title>
   <link rel="preload" href="style.css?v=00d5f730" as="style">
-  <link rel="preload" href="script.js?v=b1ae5e03" as="script">
+  <link rel="preload" href="script.js?v=e43593b0" as="script">
   <link rel="preload" href="logo.png?v=20b704ea" as="image">
   <link rel="stylesheet" href="style.css?v=00d5f730" />
 </head>
@@ -999,6 +999,32 @@
           <button type="button" class="btn secondary" id="telegram-unlink" hidden>Desvincular</button>
         </div>
       </div>
+      <div class="sheet-card" id="whatsapp-card">
+        <div class="chart-header">
+          <h2>WhatsApp</h2>
+          <p class="muted" id="whatsapp-status">Carregando…</p>
+        </div>
+        <a class="btn secondary tg-open" id="whatsapp-open" href="#" target="_blank" rel="noopener" hidden>Abrir conversa no WhatsApp</a>
+        <ul class="tg-commands">
+          <li><code>saldo</code> receitas, despesas e saldo do mês</li>
+          <li><code>dividas</code> o que ainda está em aberto</li>
+          <li><code>proximo</code> quanto pagar no mês que vem</li>
+          <li><code>vence</code> o que vence este mês</li>
+          <li><code>faturas</code> faturas de cartão</li>
+          <li><code>gasto 49,90 mercado</code> lança uma despesa</li>
+          <li><code>receita 1500 salario</code> lança uma receita</li>
+          <li>Ou pergunte em português, tipo “quanto eu pago no próximo mês?”</li>
+        </ul>
+        <div id="whatsapp-code" class="tg-code" hidden>
+          <span>Mande este código no WhatsApp</span>
+          <strong id="whatsapp-code-value"></strong>
+          <p class="muted" id="whatsapp-code-hint"></p>
+        </div>
+        <div class="debt-form-actions">
+          <button type="button" class="btn primary" id="whatsapp-link">Gerar código</button>
+          <button type="button" class="btn secondary" id="whatsapp-unlink" hidden>Desvincular</button>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -1158,7 +1184,7 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="password-policy.js?v=6887709a" defer></script>
-  <script src="script.js?v=b1ae5e03" defer></script>
+  <script src="script.js?v=e43593b0" defer></script>
   <script src="theme.js"></script>
   <script src="pwa.js?v=dc7e2f75"></script>
 </body>
