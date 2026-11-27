@@ -10,7 +10,6 @@ const path = require('path');
 
 const db = require('./database');
 const telegram = require('./telegram');
-const whatsapp = require('./whatsapp');
 const advisor = require('./advisor');
 const { passwordProblem } = require('./frontend/password-policy');
 
@@ -61,14 +60,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(require('compression')());
-app.use(express.json({
-  limit: '1mb',
-  verify: (req, res, buf) => {
-    if (req.path === '/whatsapp/webhook' || req.originalUrl === '/whatsapp/webhook') {
-      req.rawBody = Buffer.from(buf);
-    }
-  },
-}));
+app.use(express.json({ limit: '1mb' }));
 app.use(guardTraffic);
 app.use((req, res, next) => {
   const appPage = req.path === '/' || req.path === '/index.html';
@@ -146,8 +138,7 @@ function guardTraffic(req, res, next) {
     || route === '/auth/forgot' || route === '/auth/reset' || route === '/auth/verify/resend';
   if (authRoute && rateLimited(`auth:${ip}`, 40, 15 * 60 * 1000)) return tooMany(res);
   if (route === '/telegram/webhook' && rateLimited(`tg:${ip}`, 120, 60 * 1000)) return tooMany(res);
-  if (route === '/whatsapp/webhook' && rateLimited(`wa:${ip}`, 120, 60 * 1000)) return tooMany(res);
-  if (!authRoute && route !== '/telegram/webhook' && route !== '/whatsapp/webhook') {
+  if (!authRoute && route !== '/telegram/webhook') {
     const hasSession = Boolean(cookieValue(req, SESSION_COOKIE) || /^Bearer\s+\S+/i.test(String(req.headers.authorization || '')));
     if (hasSession && rateLimited(`api:${ip}`, 240, 60 * 1000)) return tooMany(res);
     if (!hasSession && rateLimited(`api-unauth:${ip}`, 60, 60 * 1000)) return tooMany(res);
@@ -2603,7 +2594,6 @@ app.delete('/loans/:id/payments/:paymentId', auth, async (req, res) => {
 });
 
 telegram.setup(app, auth);
-whatsapp.setup(app, auth);
 
 app.post('/advisor/ask', auth, async (req, res) => {
   const message = String(req.body?.message || '').trim();
@@ -2669,7 +2659,6 @@ const PORT = process.env.PORT || 3000;
 
 db.initDatabase()
   .then(() => telegram.start())
-  .then(() => whatsapp.start())
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);
