@@ -16,7 +16,7 @@ Controle financeiro pessoal: saldo, cartões, dívidas, assinaturas, investiment
 - Investimentos e cofrinhos com histórico de depósitos
 - Importação de extrato CSV ou OFX (conta ou fatura)
 - Bot do Telegram para saldo, dívidas e lançamentos rápidos
-- Consultor financeiro (app + Telegram): próximo mês a pagar, vencimentos e faturas
+- Consultor financeiro (app + Telegram): vencimentos, faturas e perguntas específicas (com IA opcional)
 - Tema claro e escuro, PWA instalável
 - Modo prévia (`?preview=1`) com dados de demonstração
 
@@ -66,6 +66,8 @@ Se já existir uma conta com o mesmo e-mail, o Google é ligado a ela. Se não e
 
 Crie um bot no [@BotFather](https://t.me/BotFather) e coloque o token em `TELEGRAM_BOT_TOKEN`. O `APP_URL` precisa ser o endereço https do app (no Render, `https://bg-finance.onrender.com`). Na subida, o servidor registra o webhook sozinho.
 
-No app, em Ajustes, a pessoa gera um código e envia `/vincular CODIGO` para o bot. Depois disso valem `/saldo`, `/dividas`, `/proximo`, `/vence`, `/faturas`, `/gasto 49,90 mercado` e `/receita 1500 salario`. Também dá para perguntar em português (ex.: “quanto eu pago no próximo mês?”). O mesmo consultor existe no app, em Mais → Consultor.
+No app, em Ajustes, a pessoa gera um código e envia `/vincular CODIGO` para o bot. Depois disso valem `/saldo`, `/dividas`, `/proximo`, `/vence`, `/faturas`, `/dicas`, `/gasto 49,90 mercado` e `/receita 1500 salario`. Também dá para perguntar em português (ex.: “quanto eu pago no próximo mês?” ou “consigo guardar 500 este mês?”). O mesmo consultor existe no app, em Mais → Consultor.
+
+Para respostas mais específicas com IA, coloque `OPENAI_API_KEY` ou `AI_GATEWAY_API_KEY` no Render (opcional `ADVISOR_AI_MODEL`). Sem chave, o consultor segue só com regras e dicas básicas.
 
 Para receber um aviso privado a cada login, mande `/id` para o bot e coloque o número em `ADMIN_TELEGRAM_CHAT_ID` no Render. Só esse chat recebe nome, e-mail e horário. O mesmo chat é avisado quando uma conta leva 5 senhas erradas em 15 minutos. Sem a variável, o login segue normal e ninguém é avisado.

@@ -2665,6 +2665,7 @@ db.initDatabase()
       console.log(`Servidor rodando na porta ${PORT}`);
       console.log(MAIL_READY ? 'E-mail de senha: provedor configurado' : 'E-mail de senha: sem BREVO_API_KEY nem RESEND_API_KEY');
       console.log(MAIL_READY ? 'Confirmacao de e-mail no cadastro: ligada' : 'Confirmacao de e-mail no cadastro: desligada (sem provedor de e-mail)');
+      console.log(advisor.aiConfigured() ? 'Consultor IA: ligado' : 'Consultor IA: desligado (sem OPENAI_API_KEY / AI_GATEWAY_API_KEY)');
       console.log(`APP_URL: ${APP_URL}`);
     });
     sweepStale();

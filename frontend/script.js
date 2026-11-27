@@ -655,9 +655,9 @@ function previewAdvisorAsk(message) {
     };
   }
   if (
-    /economiz|poupar|guardar|dica|orcamento|reduzir|gast(o|ar) menos|sobrar|investir/.test(q)
+    /economiz|poupar|guardar|dica|orcamento|reduzir|gast(o|ar) menos|sobrar|investir|cancelar|vale a pena|consigo|especific/.test(q)
     || /^\/?dicas?\b/.test(q)
-    || q.trim().length >= 8
+    || q.trim().length >= 4
   ) {
     const month = todayKey.slice(0, 7);
     const rows = allTransactions.filter((t) => String(t.date).slice(0, 7) === month);
@@ -672,7 +672,21 @@ function previewAdvisorAsk(message) {
     }
     const topCats = [...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
     const subTotal = activeSubs.reduce((sum, sub) => sum + Number(sub.amount), 0);
-    const tips = ["Dicas para economizar", `Receitas ${moneyPt(income)} · despesas ${moneyPt(expense)} · saldo ${moneyPt(balance)}`, ""];
+    const priceySub = [...activeSubs].sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+    const wantSave = q.match(/guardar\s+(\d+[.,]?\d*)|economizar\s+(\d+[.,]?\d*)|(\d+[.,]?\d*)\s*(reais|r\$)/);
+    const target = wantSave ? Number(String(wantSave[1] || wantSave[2] || wantSave[3] || "").replace(",", ".")) : null;
+    const tips = [
+      "Consultor (demo)",
+      `Receitas ${moneyPt(income)} · despesas ${moneyPt(expense)} · saldo ${moneyPt(balance)}`,
+      "",
+    ];
+    if (target && Number.isFinite(target) && target > 0) {
+      if (balance >= target) tips.push(`• Sim: com a sobra atual de ${moneyPt(balance)}, ${moneyPt(target)} cabe este mês.`);
+      else tips.push(`• Hoje a sobra é ${moneyPt(balance)}. Para chegar em ${moneyPt(target)}, falta cortar cerca de ${moneyPt(Math.max(0, target - balance))}.`);
+    }
+    if (/icloud|assinatura|cancelar|netflix|spotify/.test(q) && priceySub) {
+      tips.push(`• Sua assinatura mais cara na demo é ${priceySub.name} (${moneyPt(priceySub.amount)}). Se quase não usa, cancelar libera esse valor todo mês.`);
+    }
     if (rate != null && rate < 10) tips.push(`• Sobra de ${rate}% este mês. Tente guardar ao menos 10–20% da receita.`);
     else if (rate != null) tips.push(`• Você está com ~${rate}% de sobra. Dá para mandar parte para um cofrinho.`);
     if (topCats[0]) tips.push(`• Maior gasto: ${topCats[0][0]} (${moneyPt(topCats[0][1])}). Corte 10–15% nessa categoria.`);
@@ -681,7 +695,7 @@ function previewAdvisorAsk(message) {
       const debtTotal = openDebts.reduce((sum, d) => sum + Number(d.amount), 0);
       tips.push(`• Dívidas em aberto: ${moneyPt(debtTotal)}. Priorize a de maior juros.`);
     }
-    tips.push("• Regra prática: pague o essencial, corte 1 gasto ocioso e guarde um valor fixo todo mês.");
+    tips.push("• No app real com IA ligada, a resposta fica ainda mais específica aos seus lançamentos.");
     return { answer: tips.join("\n") };
   }
   return {
@@ -5228,14 +5242,14 @@ function paintAdvisorChat() {
   delete log.dataset.lastDay;
   if (!advisorMessages.length) {
     pushAdvisorBubble(
-      "Olá! Pergunte o que quiser: próximo mês, vencimentos, faturas, assinaturas, saldo ou como economizar. Eu respondo com base nos seus números.",
+      "Olá! Pergunte o que quiser — até coisas específicas, tipo “consigo guardar 500 este mês?” ou “vale cancelar o iCloud?”. Eu uso seus números do BG Finance.",
       "bot",
       new Date().toISOString(),
       { skipSave: true }
     );
     advisorMessages = [{
       who: "bot",
-      text: "Olá! Pergunte o que quiser: próximo mês, vencimentos, faturas, assinaturas, saldo ou como economizar. Eu respondo com base nos seus números.",
+      text: "Olá! Pergunte o que quiser — até coisas específicas, tipo “consigo guardar 500 este mês?” ou “vale cancelar o iCloud?”. Eu uso seus números do BG Finance.",
       at: new Date().toISOString(),
     }];
     saveAdvisorChat();

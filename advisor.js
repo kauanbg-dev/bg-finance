@@ -74,17 +74,39 @@ function detectIntent(text) {
 
   const q = normalize(raw);
   if (!q) return 'help';
+  // dicas / perguntas de economia antes dos atalhos de mês (ex.: "guardar 500 este mês")
+  if (/(economiz|poupar|guardar|cofrinho|orcamento|dica|como (eu )?fa[cç]o|reduzir gasto|gast(o|ar) menos|sobrar|investir|consigo |vale (a )?pena|cancelar)/.test(q)) return 'tips';
   if (/(proximo mes|mes que vem|quanto (eu )?pago|quanto (eu )?tenho que pagar|o que (eu )?pago)/.test(q)) return 'next_month';
-  if (/(este mes|esse mes|o que vence|vencimento|atrasad|vence (hoje|amanha|essa|esta))/.test(q)) return 'this_month';
+  if (/(o que vence|vencimento|atrasad|vence (hoje|amanha|essa|esta)|o que (eu )?pago este mes|venc(e|em) (este|esse) mes)/.test(q)) return 'this_month';
+  if (/(este mes|esse mes)/.test(q) && /(vence|pagar|conta|divida|fatura)/.test(q)) return 'this_month';
   if (/(fatura|cartao|limite)/.test(q)) return 'invoices';
   if (/(assinatura|netflix|spotify|plano mensal)/.test(q)) return 'subs';
   if (/(saldo|resumo|receita|despesa)/.test(q)) return 'summary';
   if (/(divida|em aberto|falta pagar)/.test(q)) return 'open_debts';
-  if (/(economiz|poupar|guardar dinheiro|cofrinho|orcamento|dica|como (eu )?fa[cç]o|reduzir gasto|gast(o|ar) menos|sobrar|investir)/.test(q)) return 'tips';
   if (/(ajuda|o que (voce|vc) (faz|sabe)|consultor)/.test(q)) return 'help';
-  // pergunta aberta: tenta dicas personalizadas em vez de só a lista de comandos
-  if (q.length >= 8) return 'tips';
+  // pergunta aberta / específica → IA (com fallback de dicas)
+  if (q.length >= 4) return 'ai';
   return 'help';
+}
+
+function aiConfigured() {
+  return Boolean(String(process.env.OPENAI_API_KEY || process.env.AI_GATEWAY_API_KEY || '').trim());
+}
+
+function aiConfig() {
+  const gateway = String(process.env.AI_GATEWAY_API_KEY || '').trim();
+  if (gateway) {
+    return {
+      url: 'https://ai-gateway.vercel.sh/v1/chat/completions',
+      key: gateway,
+      model: String(process.env.ADVISOR_AI_MODEL || 'openai/gpt-4o-mini').trim(),
+    };
+  }
+  return {
+    url: 'https://api.openai.com/v1/chat/completions',
+    key: String(process.env.OPENAI_API_KEY || '').trim(),
+    model: String(process.env.ADVISOR_AI_MODEL || 'gpt-4o-mini').trim(),
+  };
 }
 
 function answer(lines, { html = true } = {}) {
@@ -111,10 +133,193 @@ function helpAnswer() {
     '• Quando a fatura vence?',
     '• Quais assinaturas tenho?',
     '• Quero economizar / me dá uma dica',
+    '• Consigo guardar 500 reais por mês?',
     '',
     'No Telegram também valem:',
     '/proximo  /vence  /faturas  /saldo  /dividas  /dicas',
   ]);
+}
+
+async function buildContext(userId) {
+  const now = spParts();
+  const today = `${monthKey(now.year, now.month)}-${String(now.day).padStart(2, '0')}`;
+  const next = shiftMonth(now.year, now.month, 1);
+  const [summary, cats, subs, debts, recent, items] = await Promise.all([
+    db.query(
+      `SELECT
+         COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0)::float8 AS income,
+         COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0)::float8 AS expense
+       FROM transactions
+       WHERE user_id = $1
+         AND TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') =
+             TO_CHAR(NOW() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')`,
+      [userId]
+    ),
+    db.query(
+      `SELECT COALESCE(c.name, 'Outros') AS name, SUM(t.amount)::float8 AS total
+       FROM transactions t
+       LEFT JOIN categories c ON c.id = t.category_id
+       WHERE t.user_id = $1
+         AND t.type = 'expense'
+         AND TO_CHAR(t.date AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') =
+             TO_CHAR(NOW() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')
+       GROUP BY COALESCE(c.name, 'Outros')
+       ORDER BY total DESC
+       LIMIT 6`,
+      [userId]
+    ),
+    db.query(
+      `SELECT name, amount::float8 AS amount, cycle, due_date::text AS due_date
+       FROM subscriptions
+       WHERE user_id = $1 AND active = TRUE
+       ORDER BY amount DESC
+       LIMIT 12`,
+      [userId]
+    ),
+    db.query(
+      `SELECT name, amount::float8 AS amount, due_date::text AS due_date, kind
+       FROM debts
+       WHERE user_id = $1 AND paid_at IS NULL
+       ORDER BY due_date NULLS LAST, amount DESC
+       LIMIT 12`,
+      [userId]
+    ),
+    db.query(
+      `SELECT description, amount::float8 AS amount, type,
+              TO_CHAR(date AT TIME ZONE 'America/Sao_Paulo', 'DD/MM') AS day,
+              COALESCE(c.name, 'Outros') AS category
+       FROM transactions t
+       LEFT JOIN categories c ON c.id = t.category_id
+       WHERE t.user_id = $1
+       ORDER BY t.date DESC, t.position DESC, t.id DESC
+       LIMIT 12`,
+      [userId]
+    ),
+    loadDueItems(userId),
+  ]);
+
+  const income = Number(summary.rows[0].income);
+  const expense = Number(summary.rows[0].expense);
+  const thisDue = items.filter((item) => inMonth(item, now.year, now.month));
+  const nextDue = items.filter((item) => inMonth(item, next.year, next.month));
+  const late = items.filter((item) => isLate(item, today));
+
+  return {
+    timezone: 'America/Sao_Paulo',
+    month: monthLabel(now.year, now.month),
+    today,
+    month_summary: {
+      income,
+      expense,
+      balance: income - expense,
+      savings_rate_pct: income > 0 ? Math.round(((income - expense) / income) * 100) : null,
+    },
+    top_expense_categories: cats.rows.map((row) => ({ name: row.name, total: Number(row.total) })),
+    subscriptions: subs.rows.map((row) => ({
+      name: row.name,
+      amount: Number(row.amount),
+      cycle: row.cycle,
+      next_due: String(row.due_date || '').slice(0, 10),
+    })),
+    open_debts: debts.rows.map((row) => ({
+      name: row.name,
+      amount: Number(row.amount),
+      due: String(row.due_date || '').slice(0, 10),
+      kind: row.kind,
+    })),
+    due_this_month: thisDue.map((item) => ({
+      name: item.name,
+      amount: item.amount,
+      due: item.due,
+      label: item.label,
+    })),
+    due_next_month: nextDue.map((item) => ({
+      name: item.name,
+      amount: item.amount,
+      due: item.due,
+      label: item.label,
+    })),
+    late_items: late.map((item) => ({
+      name: item.name,
+      amount: item.amount,
+      due: item.due,
+      label: item.label,
+    })),
+    recent_transactions: recent.rows.map((row) => ({
+      day: row.day,
+      description: row.description,
+      amount: Number(row.amount),
+      type: row.type,
+      category: row.category,
+    })),
+  };
+}
+
+function formatAiAnswer(text) {
+  const lines = String(text || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.replace(/\*\*(.*?)\*\*/g, '**$1**').trimEnd())
+    .filter((line, index, arr) => line.length > 0 || (index > 0 && arr[index - 1].length > 0));
+  const cleaned = [];
+  for (const line of lines) {
+    if (line === '' && cleaned[cleaned.length - 1] === '') continue;
+    cleaned.push(line.replace(/^[-*]\s+/, '• ').replace(/^#{1,3}\s+/, '').trim());
+  }
+  if (!cleaned.length) return answer(['Não consegui montar a resposta agora.']);
+  return answer(cleaned.slice(0, 40));
+}
+
+async function askWithAi(userId, text) {
+  const cfg = aiConfig();
+  if (!cfg.key) throw new Error('IA nao configurada');
+  const context = await buildContext(userId);
+  const system = [
+    'Você é o Consultor do BG Finance, um assistente financeiro pessoal em português do Brasil.',
+    'Responda de forma clara, objetiva e útil, no tom de uma conversa de WhatsApp.',
+    'Use APENAS os dados do contexto JSON. Não invente saldos, dívidas ou lançamentos.',
+    'Se faltar dado, diga o que falta e como a pessoa pode lançar no app.',
+    'Pode dar dicas específicas de economia, priorização de dívidas, assinaturas e orçamento.',
+    'Não peça senha, código de cartão ou dados sensíveis.',
+    'Não fale de outros bancos/apps além do BG Finance, salvo como comparação genérica.',
+    'Formato: frases curtas; use tópicos com "• " quando listar; no máximo ~1800 caracteres.',
+    'Valores em R$ no padrão brasileiro.',
+  ].join(' ');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(cfg.url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${cfg.key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        temperature: 0.4,
+        max_tokens: 700,
+        messages: [
+          { role: 'system', content: system },
+          {
+            role: 'user',
+            content: `Contexto financeiro da conta:\n${JSON.stringify(context)}\n\nPergunta do usuário:\n${String(text || '').trim()}`,
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const msg = data?.error?.message || `IA HTTP ${response.status}`;
+      throw new Error(msg);
+    }
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('IA sem resposta');
+    return formatAiAnswer(content);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function monthSummary(userId) {
@@ -444,6 +649,20 @@ async function ask(userId, text) {
     case 'open_debts':
       return openDebts(userId);
     case 'tips':
+    case 'ai':
+      if (aiConfigured()) {
+        try {
+          return await askWithAi(userId, text);
+        } catch (err) {
+          console.error('Consultor IA falhou:', err.message);
+          if (intent === 'tips') return tips(userId);
+          return answer([
+            'Não consegui consultar a IA agora.',
+            'Você ainda pode perguntar saldo, próximo mês, faturas, assinaturas ou /dicas.',
+          ]);
+        }
+      }
+      if (intent === 'tips') return tips(userId);
       return tips(userId);
     default:
       return helpAnswer();
@@ -454,6 +673,7 @@ module.exports = {
   ask,
   detectIntent,
   helpAnswer,
+  aiConfigured,
   money,
   escapeHtml,
 };
