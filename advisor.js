@@ -90,19 +90,36 @@ function detectIntent(text) {
 }
 
 function aiConfigured() {
-  return Boolean(String(process.env.OPENAI_API_KEY || process.env.AI_GATEWAY_API_KEY || '').trim());
+  return Boolean(String(
+    process.env.GROQ_API_KEY
+    || process.env.AI_GATEWAY_API_KEY
+    || process.env.OPENAI_API_KEY
+    || ''
+  ).trim());
 }
 
 function aiConfig() {
+  const groq = String(process.env.GROQ_API_KEY || '').trim();
+  if (groq) {
+    return {
+      name: 'groq',
+      url: 'https://api.groq.com/openai/v1/chat/completions',
+      key: groq,
+      // grátis e boa na faixa free da Groq (sem cartão)
+      model: String(process.env.ADVISOR_AI_MODEL || 'openai/gpt-oss-120b').trim(),
+    };
+  }
   const gateway = String(process.env.AI_GATEWAY_API_KEY || '').trim();
   if (gateway) {
     return {
+      name: 'gateway',
       url: 'https://ai-gateway.vercel.sh/v1/chat/completions',
       key: gateway,
       model: String(process.env.ADVISOR_AI_MODEL || 'openai/gpt-4o-mini').trim(),
     };
   }
   return {
+    name: 'openai',
     url: 'https://api.openai.com/v1/chat/completions',
     key: String(process.env.OPENAI_API_KEY || '').trim(),
     model: String(process.env.ADVISOR_AI_MODEL || 'gpt-4o-mini').trim(),

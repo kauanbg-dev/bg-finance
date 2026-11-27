@@ -68,6 +68,6 @@ Crie um bot no [@BotFather](https://t.me/BotFather) e coloque o token em `TELEGR
 
 No app, em Ajustes, a pessoa gera um código e envia `/vincular CODIGO` para o bot. Depois disso valem `/saldo`, `/dividas`, `/proximo`, `/vence`, `/faturas`, `/dicas`, `/gasto 49,90 mercado` e `/receita 1500 salario`. Também dá para perguntar em português (ex.: “quanto eu pago no próximo mês?” ou “consigo guardar 500 este mês?”). O mesmo consultor existe no app, em Mais → Consultor.
 
-Para respostas mais específicas com IA, coloque `OPENAI_API_KEY` ou `AI_GATEWAY_API_KEY` no Render (opcional `ADVISOR_AI_MODEL`). Sem chave, o consultor segue só com regras e dicas básicas.
+Para respostas mais específicas com IA **grátis**, crie uma chave em [console.groq.com](https://console.groq.com) (sem cartão) e coloque `GROQ_API_KEY` no Render. O padrão é o modelo `openai/gpt-oss-120b`. Alternativas: `OPENAI_API_KEY` ou `AI_GATEWAY_API_KEY`. Sem chave, o consultor segue só com regras e dicas básicas.
 
 Para receber um aviso privado a cada login, mande `/id` para o bot e coloque o número em `ADMIN_TELEGRAM_CHAT_ID` no Render. Só esse chat recebe nome, e-mail e horário. O mesmo chat é avisado quando uma conta leva 5 senhas erradas em 15 minutos. Sem a variável, o login segue normal e ninguém é avisado.
