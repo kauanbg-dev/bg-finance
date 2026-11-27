@@ -4999,24 +4999,242 @@ function bindSubscriptions() {
 }
 
 let advisorReady = false;
+let advisorMessages = [];
+const ADVISOR_CHAT_KEY = "bg-advisor-chat";
+const ADVISOR_BOT_PHOTO = "piggy-mark.png";
 
-function pushAdvisorBubble(text, who) {
+function advisorChatKey() {
+  return `${ADVISOR_CHAT_KEY}:${userId || "anon"}`;
+}
+
+function advisorClock(iso) {
+  const date = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
+function advisorDayLabel(iso) {
+  const date = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const day = date.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  if (day === today) return "Hoje";
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const y = yesterday.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  if (day === y) return "Ontem";
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
+function userAdvisorPhoto() {
+  return currentUser?.avatar || cachedAvatar() || "";
+}
+
+function userAdvisorLetter() {
+  const name = (currentUser?.name || "").trim() || (currentUser?.email || "").split("@")[0] || "Eu";
+  return name.slice(0, 1).toUpperCase();
+}
+
+function makeAdvisorAvatar(who) {
+  const avatar = document.createElement("div");
+  avatar.className = "advisor-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  const photo = who === "bot" ? ADVISOR_BOT_PHOTO : userAdvisorPhoto();
+  if (photo) {
+    const img = document.createElement("img");
+    img.src = photo;
+    img.alt = "";
+    img.decoding = "async";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = who === "bot" ? "BG" : userAdvisorLetter();
+  }
+  return avatar;
+}
+
+function fillAdvisorBubble(bubble, text, who) {
+  const body = document.createElement("div");
+  body.className = "advisor-body";
+  const raw = String(text || "").trim();
+  if (!raw) {
+    bubble.replaceChildren();
+    return;
+  }
+  if (who !== "bot") {
+    const plain = document.createElement("div");
+    plain.className = "advisor-plain";
+    plain.textContent = raw;
+    body.appendChild(plain);
+  } else {
+    const lines = raw.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const listLines = lines.slice(1).filter((line) => /^[•\-–]/.test(line) || / — /.test(line));
+    if (lines.length <= 1 || listLines.length === 0) {
+      const plain = document.createElement("div");
+      plain.className = "advisor-plain";
+      plain.textContent = raw;
+      body.appendChild(plain);
+    } else {
+      const title = document.createElement("strong");
+      title.className = "advisor-title";
+      title.textContent = lines[0].replace(/^•\s*/, "");
+      body.appendChild(title);
+      const list = document.createElement("ul");
+      list.className = "advisor-lines";
+      lines.slice(1).forEach((line) => {
+        const item = document.createElement("li");
+        item.className = "advisor-line";
+        item.textContent = line.replace(/^[•\-–]\s*/, "");
+        list.appendChild(item);
+      });
+      body.appendChild(list);
+    }
+  }
+  bubble.replaceChildren(body);
+}
+
+function appendAdvisorTime(bubble, at) {
+  const meta = document.createElement("div");
+  meta.className = "advisor-meta";
+  const time = document.createElement("time");
+  time.className = "advisor-time";
+  time.dateTime = at;
+  time.textContent = advisorClock(at);
+  meta.appendChild(time);
+  bubble.appendChild(meta);
+}
+
+function saveAdvisorChat() {
+  try {
+    sessionStorage.setItem(advisorChatKey(), JSON.stringify(advisorMessages.slice(-80)));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function loadAdvisorChat() {
+  try {
+    const raw = sessionStorage.getItem(advisorChatKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((m) => m && (m.who === "bot" || m.who === "user") && m.text) : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderAdvisorDayDivider(label) {
+  const log = document.getElementById("advisor-log");
+  if (!log || !label) return;
+  const day = document.createElement("div");
+  day.className = "advisor-day";
+  day.textContent = label;
+  log.appendChild(day);
+}
+
+function pushAdvisorBubble(text, who, at = new Date().toISOString(), opts = {}) {
+  const log = document.getElementById("advisor-log");
+  if (!log) return null;
+  const stamp = at || new Date().toISOString();
+  const day = advisorDayLabel(stamp);
+  if (day && day !== log.dataset.lastDay) {
+    renderAdvisorDayDivider(day);
+    log.dataset.lastDay = day;
+  }
+  const row = document.createElement("div");
+  row.className = `advisor-row is-${who}`;
+  const bubble = document.createElement("div");
+  bubble.className = "advisor-bubble";
+  fillAdvisorBubble(bubble, text, who);
+  appendAdvisorTime(bubble, stamp);
+  row.append(makeAdvisorAvatar(who), bubble);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  if (!opts.skipSave) {
+    advisorMessages.push({ who, text: String(text || ""), at: stamp });
+    saveAdvisorChat();
+  }
+  return row;
+}
+
+function showAdvisorTyping() {
+  const log = document.getElementById("advisor-log");
+  const status = document.getElementById("advisor-peer-status");
+  if (!log) return null;
+  if (status) status.textContent = "digitando…";
+  const row = document.createElement("div");
+  row.className = "advisor-row is-bot is-typing";
+  row.dataset.typing = "1";
+  const bubble = document.createElement("div");
+  bubble.className = "advisor-bubble";
+  const dots = document.createElement("div");
+  dots.className = "advisor-typing";
+  dots.setAttribute("aria-label", "Consultor digitando");
+  dots.innerHTML = "<span></span><span></span><span></span>";
+  bubble.appendChild(dots);
+  row.append(makeAdvisorAvatar("bot"), bubble);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  return row;
+}
+
+function hideAdvisorTyping(row) {
+  row?.remove();
+  const status = document.getElementById("advisor-peer-status");
+  if (status) status.textContent = "online";
+}
+
+function paintAdvisorChat() {
   const log = document.getElementById("advisor-log");
   if (!log) return;
-  const bubble = document.createElement("div");
-  bubble.className = `advisor-bubble is-${who}`;
-  bubble.textContent = text;
-  log.appendChild(bubble);
-  log.scrollTop = log.scrollHeight;
+  log.replaceChildren();
+  delete log.dataset.lastDay;
+  if (!advisorMessages.length) {
+    pushAdvisorBubble(
+      "Olá! Pode perguntar qualquer coisa sobre suas contas: próximo mês, vencimentos, faturas, assinaturas ou saldo.",
+      "bot",
+      new Date().toISOString(),
+      { skipSave: true }
+    );
+    advisorMessages = [{
+      who: "bot",
+      text: "Olá! Pode perguntar qualquer coisa sobre suas contas: próximo mês, vencimentos, faturas, assinaturas ou saldo.",
+      at: new Date().toISOString(),
+    }];
+    saveAdvisorChat();
+    return;
+  }
+  advisorMessages.forEach((msg) => {
+    pushAdvisorBubble(msg.text, msg.who, msg.at, { skipSave: true });
+  });
 }
 
 function ensureAdvisorWelcome() {
   const log = document.getElementById("advisor-log");
-  if (!log || log.childElementCount) return;
-  pushAdvisorBubble(
-    "Olá! Posso dizer quanto você paga no próximo mês, o que vence agora e como está a fatura. Use um atalho ou escreva a pergunta.",
-    "bot"
-  );
+  if (!log) return;
+  if (!log.childElementCount) {
+    advisorMessages = loadAdvisorChat();
+    paintAdvisorChat();
+  }
+}
+
+function clearAdvisorChat() {
+  if (!confirm("Apagar toda a conversa com o consultor?")) return;
+  advisorMessages = [];
+  try {
+    sessionStorage.removeItem(advisorChatKey());
+  } catch {
+    /* ignore */
+  }
+  paintAdvisorChat();
+  toast("Conversa apagada");
 }
 
 async function askAdvisor(message) {
@@ -5027,10 +5245,13 @@ async function askAdvisor(message) {
   pushAdvisorBubble(text, "user");
   if (input) input.value = "";
   if (send) send.disabled = true;
+  const typing = showAdvisorTyping();
   try {
     const result = await api("POST", "/advisor/ask", { message: text });
+    hideAdvisorTyping(typing);
     pushAdvisorBubble(result?.answer || "Não consegui montar a resposta.", "bot");
   } catch (err) {
+    hideAdvisorTyping(typing);
     pushAdvisorBubble(friendlyError(err, "Não foi possível consultar agora."), "bot");
   } finally {
     if (send) send.disabled = false;
@@ -5048,6 +5269,7 @@ function bindAdvisor() {
   document.querySelectorAll(".advisor-chip[data-ask]").forEach((btn) => {
     btn.addEventListener("click", () => askAdvisor(btn.dataset.ask));
   });
+  document.getElementById("advisor-clear")?.addEventListener("click", clearAdvisorChat);
 }
 
 let telegramState = { configured: false, linked: false, username: "" };
