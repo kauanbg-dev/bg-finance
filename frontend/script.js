@@ -5031,7 +5031,7 @@ function bindSubscriptions() {
 let advisorReady = false;
 let advisorMessages = [];
 const ADVISOR_CHAT_KEY = "bg-advisor-chat";
-const ADVISOR_BOT_PHOTO = "logo.png";
+const ADVISOR_BOT_PHOTO = "advisor-avatar.png";
 
 function advisorChatKey() {
   return `${ADVISOR_CHAT_KEY}:${userId || "anon"}`;
