@@ -65,6 +65,7 @@ app.use(guardTraffic);
 app.use((req, res, next) => {
   const appPage = req.path === '/' || req.path === '/index.html';
   if (!appPage || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
+  const preview = String(req.query.preview || '') === '1';
   const token = cookieValue(req, SESSION_COOKIE);
   let signedIn = false;
   if (token) {
@@ -77,7 +78,7 @@ app.use((req, res, next) => {
     }
   }
   res.setHeader('Cache-Control', 'no-store');
-  return res.sendFile(path.join(__dirname, 'frontend', signedIn ? 'index.html' : 'login.html'));
+  return res.sendFile(path.join(__dirname, 'frontend', (signedIn || preview) ? 'index.html' : 'login.html'));
 });
 app.use(express.static(path.join(__dirname, 'frontend'), {
   etag: true,
