@@ -1,5 +1,5 @@
 // o nome do cache é gerado pelo scripts/version-assets.js, não editar na mão
-const CACHE = 'bg-finance-d4c0ac6f';
+const CACHE = 'bg-finance-6d9b79fe';
 const SHELL = [
   '/login.html',
   '/logo.png',

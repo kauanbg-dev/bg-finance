@@ -3730,6 +3730,7 @@ html[data-theme="light"] .advisor-chip{
   background: #2a3942;
   padding: 0 16px;
   color: #e9edef;
+  font-size: 16px; /* evita zoom automático no iOS */
 }
 html[data-theme="light"] .advisor-form input{
   background: #fff;
@@ -3766,15 +3767,104 @@ html[data-theme="light"] .advisor-form input{
   0%, 80%, 100%{ opacity: .35; transform: translateY(0); }
   40%{ opacity: 1; transform: translateY(-2px); }
 }
-@media (max-width: 420px){
+
+/* Mobile: chat quase tela cheia, acima da tabbar */
+@media (max-width: 719px){
+  html[data-view="advisor"] .container{
+    padding-left: 0;
+    padding-right: 0;
+    padding-bottom: calc(92px + env(safe-area-inset-bottom) + var(--vv-shift, 0px));
+  }
+  html[data-view="advisor"] .topbar{
+    padding: 0 14px;
+    margin-bottom: 8px;
+  }
+  html[data-view="advisor"] .app-footer{ display: none; }
+  html[data-view="advisor"] #view-advisor{
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - 170px - env(safe-area-inset-bottom) - var(--vv-shift, 0px));
+  }
+  html[data-view="advisor"] #preview-banner{
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  #view-advisor .view-head{
+    padding: 0 14px;
+    margin: 0 0 8px;
+  }
+  #view-advisor .view-head h2{ font-size: 18px; }
+  #view-advisor .view-head p{ display: none; }
+  #view-advisor .advisor-shell{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+  }
+  #view-advisor .advisor-panel{
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    height: calc(100dvh - 168px - env(safe-area-inset-bottom) - var(--vv-shift, 0px));
+    border-radius: 16px 16px 0 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    box-shadow: none;
+  }
+  .advisor-top{ padding: 10px 12px; }
+  .advisor-peer-photo{ width: 36px; height: 36px; }
+  .advisor-log{
+    padding: 12px 10px 8px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .advisor-bubble{
+    max-width: min(88%, 100%);
+    font-size: 15px;
+  }
+  .advisor-avatar{ width: 30px; height: 30px; }
+  .advisor-composer{
+    padding: 8px 10px 10px;
+    gap: 8px;
+  }
+  .advisor-chips{
+    margin: 0 -2px;
+    padding: 0 2px 2px;
+    gap: 6px;
+  }
+  .advisor-chip{
+    min-height: 32px;
+    padding: 6px 11px;
+    font-size: 12px;
+  }
   .advisor-send-label{ display: none; }
   .advisor-send-icon{ display: block; }
-  .advisor-panel{ min-height: min(64vh, 580px); }
+  .advisor-send{
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+  }
+  .advisor-form{ gap: 8px; }
+  .advisor-form input{
+    min-height: 44px;
+    padding: 0 14px;
+  }
+}
+@media (max-width: 380px){
+  #view-advisor .advisor-panel{
+    height: calc(100dvh - 158px - env(safe-area-inset-bottom) - var(--vv-shift, 0px));
+  }
+  .advisor-row{ gap: 6px; }
+  .advisor-avatar{ display: none; }
+  .advisor-bubble{ max-width: 94%; }
 }
 html.watch .advisor-panel{
   min-height: 42vh;
   max-height: 58vh;
   border-radius: 14px;
+  height: auto;
 }
 html.watch .advisor-avatar,
 html.watch .advisor-peer-photo{ width: 28px; height: 28px; }

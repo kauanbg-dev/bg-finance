@@ -3439,6 +3439,7 @@ function closeNavMore() {
 
 function showView(name, scroll = true) {
   if (!VIEWS.has(name)) name = "home";
+  document.documentElement.dataset.view = name;
   document.querySelectorAll(".app-view").forEach((el) => {
     el.hidden = el.id !== `view-${name}`;
   });
