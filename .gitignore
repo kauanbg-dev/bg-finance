@@ -2,6 +2,11 @@ node_modules/
 frontend/node_modules/
 .env
 .env.local
+.env.*.local
+credentials.json
+*.pem
+*.p12
+*.key
 *.log
 .DS_Store
 .vercel

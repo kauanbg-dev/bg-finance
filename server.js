@@ -31,7 +31,24 @@ app.use(helmet({
     },
   },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  hsts: {
+    maxAge: 15552000,
+    includeSubDomains: true,
+    preload: false,
+  },
 }));
+
+// no Render o TLS termina no proxy; se alguém chegar em http, manda pra https
+function forceHttps(req, res, next) {
+  const live = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER_EXTERNAL_URL);
+  if (!live) return next();
+  if (req.secure || req.get('x-forwarded-proto') === 'https') return next();
+  const host = req.get('host');
+  if (!host) return next();
+  return res.redirect(301, `https://${host}${req.originalUrl}`);
+}
+app.use(forceHttps);
+
 const APP_URL = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
 const corsOrigins = new Set([APP_URL, 'http://localhost:3000', 'http://127.0.0.1:3000']);
 app.use(cors({
@@ -221,9 +238,52 @@ async function auth(req, res, next) {
   }
 }
 
+const LIMITS = {
+  userName: 80,
+  name: 120,
+  person: 80,
+  notes: 240,
+  description: 120,
+  category: 40,
+  issuer: 80,
+  nickname: 40,
+};
+
+// formato comum de e-mail (sem IP literal); tamanho máximo do RFC 5321
+function isEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  if (!email || email.length > 254) return false;
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(email);
+}
+
+function emailHint(email) {
+  const raw = String(email || '').trim().toLowerCase();
+  const at = raw.indexOf('@');
+  if (at < 1) return 'invalid';
+  return `${raw[0]}***@${raw.slice(at + 1)}`;
+}
+
+function cleanLabel(value, max) {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!text || text.length > max) return null;
+  return text;
+}
+
+// false = passou do limite; null = vazio ok; string = texto
+function cleanNotes(value, max = LIMITS.notes) {
+  const text = String(value || '').trim();
+  if (text.length > max) return false;
+  return text || null;
+}
+
+// trilha mínima de auditoria: evento + ids, sem senha/token/secret
+function audit(event, detail = {}) {
+  console.log(`[audit] ${JSON.stringify({ at: new Date().toISOString(), event, ...detail })}`);
+}
+
 function readAuth(body) {
   return {
-    name: String(body.name || '').trim(),
+    name: String(body.name || '').trim().replace(/\s+/g, ' '),
     email: String(body.email || '').trim().toLowerCase(),
     password: String(body.password || ''),
   };
@@ -289,8 +349,7 @@ async function placeOwnedRow({ table, userId, id, beforeId, copyDate, dateCol, e
 
 function validTransaction(description, amount, type) {
   return (
-    description.length > 0 &&
-    description.length <= 120 &&
+    Boolean(cleanLabel(description, LIMITS.description)) &&
     Number.isFinite(amount) &&
     amount > 0 &&
     amount < 1e10 &&
@@ -336,7 +395,11 @@ async function register(req, res) {
     return res.status(400).json({ error: 'Preencha nome, email e senha' });
   }
 
-  if (!email.includes('@') || email.length > 254) {
+  if (name.length < 2 || name.length > LIMITS.userName) {
+    return res.status(400).json({ error: 'Nome precisa ter entre 2 e 80 caracteres' });
+  }
+
+  if (!isEmail(email)) {
     return res.status(400).json({ error: 'Digite um e-mail valido' });
   }
 
@@ -356,6 +419,8 @@ async function register(req, res) {
       'INSERT INTO users (name, email, password, email_verified_at) VALUES ($1, $2, $3, $4) RETURNING id',
       [name, email, hash, MAIL_READY ? null : new Date()]
     );
+
+    audit('register_ok', { userId: created.rows[0].id, ip: clientIp(req), email: emailHint(email) });
 
     if (!MAIL_READY) return res.json({ ok: true, verify: false });
 
@@ -392,7 +457,7 @@ function parseSender(value) {
 async function deliverEmail({ to, subject, html }) {
   if (process.env.BREVO_API_KEY) {
     const sender = parseSender(process.env.MAIL_FROM);
-    if (!sender.email.includes('@')) {
+    if (!isEmail(sender.email)) {
       throw new Error('MAIL_FROM ausente ou invalido. No Brevo, use um remetente verificado.');
     }
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -494,7 +559,7 @@ async function verifyEmail(req, res) {
 async function resendVerification(req, res) {
   const email = String(req.body.email || '').trim().toLowerCase();
 
-  if (!email.includes('@')) {
+  if (!isEmail(email)) {
     return res.status(400).json({ error: 'Digite um e-mail valido' });
   }
 
@@ -597,7 +662,7 @@ async function forgotPassword(req, res) {
   const email = String(req.body.email || '').trim().toLowerCase();
   const generic = { ok: true, message: 'Se esse e-mail estiver cadastrado, enviaremos um link para redefinir a senha.' };
 
-  if (!email.includes('@')) {
+  if (!isEmail(email)) {
     return res.status(400).json({ error: 'Digite um e-mail valido' });
   }
 
@@ -639,6 +704,7 @@ async function forgotPassword(req, res) {
         error: 'Nao foi possivel enviar o link. No Render, defina BREVO_API_KEY e MAIL_FROM, ou vincule o Telegram em Ajustes.',
       });
     }
+    audit('password_reset_requested', { userId: user.id, ip: clientIp(req), email: emailHint(email) });
     return res.json(generic);
   } catch (err) {
     console.error('Erro ao solicitar redefinicao de senha:', err);
@@ -694,6 +760,7 @@ async function resetPassword(req, res) {
       [hash, row.user_id]
     );
     await db.query('DELETE FROM password_resets WHERE user_id = $1', [row.user_id]);
+    audit('password_reset_ok', { userId: row.user_id, ip: clientIp(req) });
     return res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao redefinir senha:', err);
@@ -704,6 +771,10 @@ async function resetPassword(req, res) {
 async function login(req, res) {
   const { email, password } = readAuth(req.body);
   const ip = clientIp(req);
+
+  if (!isEmail(email)) {
+    return res.status(400).json({ error: 'Digite um e-mail valido' });
+  }
 
   if (
     rateLimited(`login-ip:${ip}`, 20, 15 * 60 * 1000)
@@ -722,21 +793,24 @@ async function login(req, res) {
 
     const valid = await bcrypt.compare(password, user ? user.password : FAKE_HASH);
     if (!user) {
+      audit('login_failed', { reason: 'unknown_user', ip, email: emailHint(email) });
       return res.status(401).json({ error: 'Credenciais invalidas' });
     }
 
     if (!valid) {
       noteFailedLogin(user, ip);
+      audit('login_failed', { reason: 'bad_password', userId: user.id, ip });
       return res.status(401).json({ error: 'Credenciais invalidas' });
     }
 
     failedLogins.delete(user.id);
 
     if (MAIL_READY && !user.email_verified_at) {
+      audit('login_blocked', { reason: 'unverified_email', userId: user.id, ip });
       return res.status(403).json({ error: 'Confirme seu e-mail antes de entrar' });
     }
 
-    finishLogin(req, res, user);
+    finishLogin(req, res, user, 'password');
     return res.json({ ok: true });
   } catch (err) {
     console.error('Erro ao fazer login:', err);
@@ -818,11 +892,13 @@ async function checkNewDevice(user, device, ip, userAgent) {
   }
 }
 
-function finishLogin(req, res, user) {
+function finishLogin(req, res, user, method = 'password') {
   issueSession(res, signSession(user));
   telegram.notifyLogin(user);
+  const ip = clientIp(req);
+  audit('login_ok', { userId: user.id, ip, method });
   const device = deviceId(req, res);
-  checkNewDevice(user, device, clientIp(req), req.get('user-agent'))
+  checkNewDevice(user, device, ip, req.get('user-agent'))
     .catch((err) => console.error('Checagem de aparelho novo falhou:', err.message));
 }
 
@@ -924,8 +1000,8 @@ async function googleCallback(req, res) {
     const verified = profile.email_verified === true || profile.email_verified === 'true';
     if (!email || !verified) return fail('email');
 
-    const user = await googleUser(String(profile.sub), email, String(profile.name || '').trim());
-    finishLogin(req, res, user);
+    const user = await googleUser(String(profile.sub), email, String(profile.name || '').trim().slice(0, LIMITS.userName));
+    finishLogin(req, res, user, 'google');
     return res.redirect('/');
   } catch (err) {
     console.error('Erro no login com Google:', err);
@@ -965,6 +1041,7 @@ app.post('/auth/logout', async (req, res) => {
       'UPDATE users SET token_version = token_version + 1 WHERE id = $1 AND token_version = $2',
       [payload.id, payload.ver]
     );
+    audit('logout', { userId: payload.id, ip: clientIp(req) });
   }
   clearSession(res);
   return res.json({ ok: true });
@@ -1013,8 +1090,8 @@ app.put('/me', auth, async (req, res) => {
 
   let name;
   if (hasName) {
-    name = String(body.name || '').trim();
-    if (name.length < 2 || name.length > 80) {
+    name = String(body.name || '').trim().replace(/\s+/g, ' ');
+    if (name.length < 2 || name.length > LIMITS.userName) {
       return res.status(400).json({ error: 'Nome precisa ter entre 2 e 80 caracteres' });
     }
   }
@@ -1022,7 +1099,7 @@ app.put('/me', auth, async (req, res) => {
   let email;
   if (hasEmail) {
     email = String(body.email || '').trim().toLowerCase();
-    if (!email.includes('@') || email.length > 254) {
+    if (!isEmail(email)) {
       return res.status(400).json({ error: 'Digite um e-mail valido' });
     }
   }
@@ -1154,10 +1231,10 @@ app.get('/categories', auth, async (req, res) => {
 });
 
 app.post('/categories', auth, async (req, res) => {
-  const name = String(req.body.name || '').trim();
+  const name = cleanLabel(req.body.name, LIMITS.category);
   const type = String(req.body.type || '').trim();
 
-  if (!name || name.length > 40 || (type !== 'income' && type !== 'expense')) {
+  if (!name || (type !== 'income' && type !== 'expense')) {
     return res.status(400).json({ error: 'Dados invalidos' });
   }
 
@@ -1601,21 +1678,20 @@ app.put('/settings', auth, async (req, res) => {
 });
 
 function debtPayload(body) {
-  const name = String(body.name || '').trim();
+  const name = cleanLabel(body.name, LIMITS.name);
   const kind = String(body.kind || '').trim();
   const amount = Number(body.amount);
-  const notes = String(body.notes || '').trim();
+  const notes = cleanNotes(body.notes);
   const dueRaw = String(body.due_date || '').trim();
   const due = dueRaw ? parseDate(dueRaw) : null;
 
   if (
     !name ||
-    name.length > 120 ||
+    notes === false ||
     !DEBT_KINDS.includes(kind) ||
     !Number.isFinite(amount) ||
     amount <= 0 ||
     amount >= 1e10 ||
-    notes.length > 240 ||
     (dueRaw && !due)
   ) {
     return null;
@@ -1629,7 +1705,7 @@ function debtPayload(body) {
     name,
     kind,
     amount,
-    notes: notes || null,
+    notes,
     dueDate: due,
     paid: body.paid === true,
     cardId: kind === 'credit_card' ? cardId : null,
@@ -1706,17 +1782,17 @@ app.put('/debts/:id', auth, async (req, res) => {
 const CARD_BRANDS = ['visa', 'mastercard', 'elo', 'amex'];
 
 function cardPayload(body) {
-  const issuer = String(body.issuer || '').trim();
+  const issuer = cleanLabel(body.issuer, LIMITS.issuer);
   const brand = String(body.brand || '').trim();
   const last4 = String(body.last4 || '').replace(/\D/g, '');
   const creditLimit = Number(body.credit_limit);
   const color = String(body.color || '').trim().toLowerCase();
-  const nickname = String(body.nickname || '').trim().replace(/\s+/g, ' ');
+  const nicknameRaw = String(body.nickname || '').trim().replace(/\s+/g, ' ');
+  const nickname = nicknameRaw ? cleanLabel(nicknameRaw, LIMITS.nickname) : null;
 
   if (
     !issuer ||
-    issuer.length > 80 ||
-    nickname.length > 40 ||
+    (nicknameRaw && !nickname) ||
     !CARD_BRANDS.includes(brand) ||
     !/^\d{4}$/.test(last4) ||
     !Number.isFinite(creditLimit) ||
@@ -1727,18 +1803,17 @@ function cardPayload(body) {
     return null;
   }
 
-  return { issuer, brand, last4, creditLimit, color: color || null, nickname: nickname || null };
+  return { issuer, brand, last4, creditLimit, color: color || null, nickname };
 }
 
 function chargePayload(body) {
-  const description = String(body.description || '').trim();
+  const description = cleanLabel(body.description, LIMITS.description);
   const amount = Number(body.amount);
   const spentRaw = String(body.spent_at || '').trim();
   const spent = spentRaw ? parseDate(spentRaw) : null;
 
   if (
     !description ||
-    description.length > 120 ||
     !Number.isFinite(amount) ||
     amount <= 0 ||
     amount >= 1e10 ||
@@ -2107,10 +2182,10 @@ function cleanPaidDates(value) {
 }
 
 function subscriptionPayload(body) {
-  const name = String(body.name || '').trim();
+  const name = cleanLabel(body.name, LIMITS.name);
   const cycle = String(body.cycle || '').trim();
   const amount = Number(body.amount);
-  const notes = String(body.notes || '').trim();
+  const notes = cleanNotes(body.notes);
   const dueRaw = String(body.due_date || '').trim();
   const due = dueRaw ? parseDate(dueRaw) : null;
   const billedRaw = String(body.billed_due || '').trim();
@@ -2120,12 +2195,11 @@ function subscriptionPayload(body) {
 
   if (
     !name ||
-    name.length > 120 ||
+    notes === false ||
     !SUB_CYCLES.includes(cycle) ||
     !Number.isFinite(amount) ||
     amount <= 0 ||
     amount >= 1e10 ||
-    notes.length > 240 ||
     (dueRaw && !due) ||
     (billedRaw && !billed) ||
     !paidDates
@@ -2137,7 +2211,7 @@ function subscriptionPayload(body) {
     name,
     cycle,
     amount,
-    notes: notes || null,
+    notes,
     dueDate: due,
     active: body.active !== false,
     payWith,
@@ -2227,19 +2301,19 @@ function cleanPiggyEntries(value) {
 }
 
 function savingPayload(body) {
-  const name = String(body.name || '').trim();
+  const name = cleanLabel(body.name, LIMITS.name);
   const kind = String(body.kind || '').trim();
   const category = String(body.category || '').trim();
   const amount = Number(body.amount);
-  const notes = String(body.notes || '').trim();
+  const notes = cleanNotes(body.notes);
   const allowed = SAVE_KINDS[kind];
   const amountOk = Number.isFinite(amount) && amount < 1e10 && (kind === 'piggy' ? amount >= 0 : amount > 0);
 
-  if (!name || name.length > 120 || !allowed || !allowed.includes(category) || !amountOk || notes.length > 240) {
+  if (!name || notes === false || !allowed || !allowed.includes(category) || !amountOk) {
     return null;
   }
 
-  return { name, kind, category, amount: Math.round(amount * 100) / 100, notes: notes || null };
+  return { name, kind, category, amount: Math.round(amount * 100) / 100, notes };
 }
 
 async function listSavings(userId) {
@@ -2387,26 +2461,25 @@ app.delete('/savings/:id/entries/:entryId', auth, async (req, res) => {
 const LOAN_DIRECTIONS = ['owe', 'owed'];
 
 function loanPayload(body) {
-  const person = String(body.person || '').trim().replace(/\s+/g, ' ');
+  const person = cleanLabel(body.person, LIMITS.person);
   const direction = String(body.direction || '').trim();
   const amount = Math.round(Number(body.amount) * 100) / 100;
-  const notes = String(body.notes || '').trim();
+  const notes = cleanNotes(body.notes);
   const dueRaw = String(body.due_date || '').trim();
   const dueDate = dueRaw ? cleanDay(dueRaw) : null;
 
   if (
     !person ||
-    person.length > 80 ||
+    notes === false ||
     !LOAN_DIRECTIONS.includes(direction) ||
     !Number.isFinite(amount) ||
     amount <= 0 ||
     amount >= 1e10 ||
-    notes.length > 240 ||
     (dueRaw && !dueDate)
   ) {
     return null;
   }
-  return { person, direction, amount, notes: notes || null, dueDate };
+  return { person, direction, amount, notes, dueDate };
 }
 
 async function listLoans(userId) {

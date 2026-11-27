@@ -25,6 +25,17 @@ Controle financeiro pessoal: saldo, cartões, dívidas, assinaturas, investiment
 - PostgreSQL (Neon)
 - HTML, CSS e JavaScript (`frontend/`)
 
+## Backup e recuperação (Neon)
+
+Os dados ficam no PostgreSQL hospedado no [Neon](https://neon.tech). O app não grava dump local: o backup é o da própria plataforma.
+
+1. No painel do Neon, abra o projeto e confira **Backups** / **Point-in-time restore** (disponível nos planos com histórico).
+2. Para um snapshot manual, use o console SQL ou a CLI do Neon e exporte quando precisar (`pg_dump` com a `DATABASE_URL` de leitura).
+3. Em caso de falha, restaure pelo painel (PITR ou branch a partir de um ponto no tempo) e aponte de novo a `DATABASE_URL` no Render, se a connection string mudar.
+4. Guarde a `DATABASE_URL` e o `JWT_SECRET` só no Render / `.env` local — nunca no git.
+
+Em produção o servidor força HTTPS (quando há `RENDER_EXTERNAL_URL` ou `NODE_ENV=production`) e envia HSTS.
+
 ## Como rodar
 
 ```bash
